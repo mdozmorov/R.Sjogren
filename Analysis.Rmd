@@ -1,0 +1,107 @@
+Sjogren syndrome microarray data analysis
+========================================================
+Topics to be covered:
+* Data preparation
+* Batch effect investigation
+* Using ComBat to account for batch effect
+* Machine learning on clinical meta-data
+
+Data preparation
+--------------------
+
+```{r setup, echo=FALSE, include=FALSE, cache=FALSE}
+# Set up the environment
+library(knitr) 
+opts_chunk$set(cache.path='cache/', fig.path='img/', cache=TRUE, tidy=T, fig.keep='high', echo=T, dpi=300, out.width=700)
+options(replace.assign=TRUE, width=120)
+```
+
+```{r loadLibraries, echo=FALSE}
+# Load necessary packages
+suppressMessages(library(limma))
+```
+
+`annot.txt` is taken from `Single-experiment raw data3//annot3.txt`
+
+`data.txt` are combined from `01.Data.Analysis.xlsx` and `11.Data.xlsx`.
+
+`meta1.txt` is taken from `11 Annotations final cohorts sheet 2 20DEC13 DF.xlsx` and contains cohort information. The data has been transposed  to have patients names as columns for compatibility with `data.txt`
+
+`meta2.txt` is taken from `20140214FarrisMicroarraymgdb(1).xlsx` (03-13-2014). The data has been transposed. Patient `p1033680-6` has been renamed to `p1033680-6 (-5)` to be compatible with `data.txt` headers.
+
+```{r loadData, cache=TRUE, echo=FALSE}
+# Full annotations. To avoid R errors on special characters, in Excel select "Description" column, use Ctrl+1, Custom category, \"@\" type
+annot.f <- read.table("data//annot_full.txt",sep="\t", quote="\"", header=T, as.is=T) 
+annot.f <- apply(annot.f, 2, function(x){sapply(x, function(y){gsub("\"", "", y)})}) # Remove \"
+colnames(annot.f) <- c("ProbeName", "GeneName", "SystematicName", "Description") # Rename columns
+rownames(annot.f) <- paste("gene", seq(1, nrow(annot.f)), sep="") # Dummy row names, to be later used for merging
+# Expression data
+exprs <- as.matrix(read.table("data//data.txt", sep="\t", header=T))
+# Meta data
+meta1 <- read.table("data//meta1.txt", sep="\t", header=T, row.names=1) # Has cohort
+meta2 <- read.table("data//meta2.txt", sep="\t", header=T, row.names=1) # Has other clinical parameters
+meta12 <- as.data.frame(rbind(meta1[1:2, intersect(colnames(meta1), colnames(meta2))], 
+                              meta2[, intersect(colnames(meta1), colnames(meta2))])) # Need only the first two parameters from meta1. Join vertically by common names
+patients <- colnames(meta12)[meta12["Microarray Class", ] == "AC" | meta12["Microarray Class", ] == "PSS"] # Should be 34. 
+
+loadMeta <- function(outliersRemove){ # Load meta data
+  p <- patients
+  if (outliersRemove) {p <- patients[!patients %in% c("p1033216.2", "p1033680.6...5.")]}
+  meta <- as.data.frame(t(meta12[, p])) # Subsetting
+  colnames(meta) <- sapply(colnames(meta), function(x) gsub(" ", "", x)) # Removing spaces from column names
+  return(meta)
+}
+
+loadExprs <- function(outliersRemove){ # Load expression data
+  p <- patients
+  if (outliersRemove) {p <- patients[!patients %in% c("p1033216.2", "p1033680.6...5.")]}
+  exprs.n <- log2(normalizeQuantiles(exprs[, p]))
+  colnames(exprs.n) <- colnames(exprs[, p])
+  rownames(exprs.n) <- paste("gene", seq(1,nrow(exprs.n)), sep="") # Dummy row names, to be later used for merging
+  return(exprs.n) # Subsetting
+}
+```
+
+```{r prinComponents, echo=FALSE}
+prinComponents <- function(exprs) {
+  #summary(prcomp(log10(exprs)))
+  pca<-prcomp(log2(exprs))$rotation
+  x = pca[,1]; y = pca[,2]
+  xadj<-0.1*(max(x)-min(x)); yadj<-0.1*(max(y)-min(y))
+  plot(x,y,xlab="PC1", ylab="PC2", main="PC analysis on cohorts",
+     xlim=c(min(x) - xadj, max(x) + xadj), ylim=c(min(y) - yadj, max(y) + yadj),
+     pch=ifelse(meta$Cohort == 1, 1, 2),
+     col=ifelse(meta$MicroarrayClass == "AC", "red", "blue")) 
+  text(x,y+0.03,labels=rownames(pca), cex=0.7)
+  legend("bottomright", c("Cohort1/AC", "Cohort2/AC", "Cohort1/PCC", "Cohort2/PCC"), 
+      col=c("red","red","blue","blue"),
+      pch=c(1,2,1,2))
+}
+```
+
+Principal component analysis of the original data, two groups and two cohorts.
+
+```{r dataWithOutliers}
+outliersRemove <- FALSE
+meta <- loadMeta(outliersRemove)
+exprs.n <- loadExprs(outliersRemove)
+prinComponents(exprs.n)
+```
+
+Clearly, cohorts are heavily different. The two patients, p1033216.2 and p1033680.6...5., appear as outliers - remove them and loot at the principal components again.
+
+```{r noOutliers}
+outliersRemove <- TRUE
+meta <- loadMeta(outliersRemove)
+exprs.n <- loadExprs(outliersRemove)
+prinComponents(exprs.n)
+```
+
+Batch effect investigation
+Using ComBat to account for batch effect
+Machine learning on clinical meta-data
+
+
+
+
+
