@@ -5,6 +5,6 @@ Sjogren syndrome microarray data analysis
 
 *Analysis.Rmd* and *Analysis.html* are the front end of the analysis.
 
-*Limma_SAM.R* is work in progress/test code
+*snippets* folder contains code snippets
 
-Other scripts contain misc old and test code
+*work_scripts* folder stores in progress/debugging code

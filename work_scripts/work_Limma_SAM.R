@@ -110,7 +110,7 @@ write.table(unique(annot.f[rownames(tmp), c(2,4)]), "clipboard-128", sep="\t", r
 write.table(merge(tmp, annot.f, by="row.names"), "f:/111.txt", sep="\t", row.names=F)
 
 # ComBat
-combat_edata<-ComBat(dat=exprs.n, batch=meta$Cohort, mod=mod, numCovs=NULL, par.prior=TRUE, prior.plots=T)
+combat_edata<-ComBat(dat=exprs.n, batch=meta$Cohort, mod=mod, numCovs=NULL, par.prior=TRUE, prior.plots=F)
 pValuesComBat = f.pvalue(combat_edata,mod,mod0)
 qValuesComBat = p.adjust(pValuesComBat,method="BH")
 sum(qValuesComBat < 0.1)

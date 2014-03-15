@@ -5,14 +5,55 @@ Topics to be covered:
 * Using ComBat to account for batch effect
 * Machine learning on clinical meta-data
 
+
+
+
+
+```
+## ==========================================================================
+## *
+## *  Package WGCNA 1.34 loaded.
+## *
+## *    Important note: It appears that your system supports multi-threading,
+## *    but it is not enabled within WGCNA in R. 
+## *    To allow multi-threading within WGCNA with all available cores, use 
+## *
+## *          allowWGCNAThreads()
+## *
+## *    within R. Use disableWGCNAThreads() to disable threading if necessary.
+## *    Alternatively, set the following environment variable on your system:
+## *
+## *          ALLOW_WGCNA_THREADS=<number_of_processors>
+## *
+## *    for example 
+## *
+## *          ALLOW_WGCNA_THREADS=12
+## *
+## *    To set the environment variable in linux bash shell, type 
+## *
+## *           export ALLOW_WGCNA_THREADS=12
+## *
+## *     before running R. Other operating systems or shells will
+## *     have a similar command to achieve the same aim.
+## *
+## ==========================================================================
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Data preparation
 --------------------
-
-
-
-
-
-
 
 `annot.txt` is taken from `Single-experiment raw data3//annot3.txt`
 
@@ -20,38 +61,221 @@ Data preparation
 
 `meta1.txt` is taken from `11 Annotations final cohorts sheet 2 20DEC13 DF.xlsx` and contains cohort information. The data has been transposed  to have patients names as columns for compatibility with `data.txt`
 
-`meta2.txt` is taken from `20140214FarrisMicroarraymgdb(1).xlsx` (03-13-2014). The data has been transposed. Patient `p1033680-6` has been renamed to `p1033680-6 (-5)` to be compatible with `data.txt` headers.
+`meta2.txt` is taken from `20140214FarrisMicroarraymgdb(1).xlsx` (accessed on 03-13-2014). The data has been transposed. ID `p1033680-6` has been renamed to `p1033680-6 (-5)` to be compatible with the `data.txt` header.
 
 
 
 
-
-
-
-Principal component analysis of the original data, two groups and two cohorts.
+To identify the largest source of variability within the data, we perform principal component analysis and color the samples by Cohort/Treatment status.
 
 
 ```r
 outliersRemove <- FALSE
 meta <- loadMeta(outliersRemove)
 exprs.n <- loadExprs(outliersRemove)
-prinComponents(exprs.n)
+# arrayQualityMetrics(new('ExpressionSet', exprs=exprs.n), outdir='arrayQC_WithOutliers')
 ```
 
-<img src="img/dataWithOutliers.png" title="plot of chunk dataWithOutliers" alt="plot of chunk dataWithOutliers" width="700" />
 
 
-Clearly, cohorts are heavily different. The two patients, p1033216.2 and p1033680.6...5., appear as outliers - remove them and loot at the principal components again.
+```r
+prinComponents(log2(exprs.n))
+```
+
+<img src="img/PCAwithOutliers.png" title="plot of chunk PCAwithOutliers" alt="plot of chunk PCAwithOutliers" width="700" />
+
+
+Clearly, the cohorts are very different. The two patients, p1033216.2 and p1033680.6...5., appear as outliers. They are also picked up by the _arrayQualityMetrics_ set of tests. 
+
+We remove them and look at the principal components again.
 
 
 ```r
 outliersRemove <- TRUE
 meta <- loadMeta(outliersRemove)
-exprs <- loadExprs(outliersRemove)
-prinComponents(exprs)
+exprs.n <- loadExprs(outliersRemove)
+# arrayQualityMetrics(new('ExpressionSet', exprs=exprs.n), outdir='arrayQC_WithoutOutliers')
 ```
 
-<img src="img/noOutliers.png" title="plot of chunk noOutliers" alt="plot of chunk noOutliers" width="700" />
 
 
+```r
+prinComponents(log2(exprs.n))
+```
+
+<img src="img/PCAwithoutOutliers.png" title="plot of chunk PCAwithoutOutliers" alt="plot of chunk PCAwithoutOutliers" width="700" />
+
+
+The data looks more homogeneous now, with the cohort effect still dominating.
+
+To further investigate how the outliers affect differential gene expression, we will perform differential expression _limma_ analysis on the expression data with and without outlier, as well as check for the enriched pathways. 
+
+
+```r
+outliersRemove <- FALSE
+meta <- loadMeta(outliersRemove)
+exprs.n <- loadExprs(outliersRemove)
+# arrayQualityMetrics(new('ExpressionSet', exprs=exprs.n), outdir='arrayQC_WithOutliers')
+res <- limmaOnData(exprs.n, "MicroarrayClass", "limma_MicroarrayClass_WithOutliers_WithBatch.txt")
+nrow(res)
+```
+
+```
+## [1] 41
+```
+
+```r
+res.pathway <- reactomeEnrichment(res)
+res.pathway[[2]]
+```
+
+```
+## [1] 0
+```
+
+
+Not many probes are differentially expressed out of 62976 total. No pathway enrichment either.
+
+
+```r
+outliersRemove <- TRUE
+meta <- loadMeta(outliersRemove)
+exprs.n <- loadExprs(outliersRemove)
+# arrayQualityMetrics(new('ExpressionSet', exprs=exprs.n), outdir='arrayQC_WithoutOutliers')
+res <- limmaOnData(exprs.n, "MicroarrayClass", "limma_MicroarrayClass_WithoutOutliers_WithBatch.txt")
+nrow(res)
+```
+
+```
+## [1] 169
+```
+
+```r
+res.pathway <- reactomeEnrichment(res)
+res.pathway[[2]]
+```
+
+```
+## [1] 0
+```
+
+
+Removing the outliers definitely helps to improve sensitivity in detecting differentially expressed genes. But not enough to see any pathway enrichment.
+
+Using ComBat to account for batch effect
+-----------------------------------------
+
+To investigate batch effect in raw data, we will test the differences between the cohorts of patients, without considering their treatment status. The outliers were removed.
+
+
+```r
+res <- limmaOnData(exprs.n, "Cohort", "limma_Cohorts_WithoutOutliers_WithBatch.txt")
+nrow(res)
+```
+
+```
+## [1] 19562
+```
+
+```r
+res.pathway <- reactomeEnrichment(res)
+res.pathway[[2]]
+```
+
+```
+## [1] 0
+```
+
+
+Almost 1/3 of the probes are differentially expressed between cohorts. They show no pathway enrichment.
+
+We use ComBat to manually adjust for the cohort effect and keep the treatment effect. If we look at the PCA plot after the adjustment, the data look more homogeneous, and the cohorts are now mixed together.
+
+
+```r
+combat_edata <- ComBat(dat = exprs.n, batch = meta$Cohort, mod = model.matrix(~as.factor(MicroarrayClass), data = meta), 
+    numCovs = NULL, par.prior = TRUE, prior.plots = F)
+```
+
+```
+## Found 2 batches
+## Found 1  categorical covariate(s)
+## Standardizing Data across genes
+## Fitting L/S model and finding priors
+## Finding parametric adjustments
+## Adjusting the Data
+```
+
+```r
+prinComponents(combat_edata)
+```
+
+<img src="img/combat.png" title="plot of chunk combat" alt="plot of chunk combat" width="700" />
+
+
+And no differentially expressed genes can be detected after removing the batch effect.
+
+
+```r
+res <- limmaOnData(combat_edata, "Cohort", "limma_Cohort_WithoutOutliers_WithoutBatch.txt")
+nrow(res)
+```
+
+```
+## [1] 0
+```
+
+
+After removing batch effect, We not only get more differentially expressed genes, but also enriched pathways. Top 20 are shown
+
+
+```r
+res <- limmaOnData(combat_edata, "MicroarrayClass", "limma_MicroarrayClass_WithoutOutliers_WithoutBatch.txt")
+nrow(res)
+```
+
+```
+## [1] 754
+```
+
+```r
+res.pathway <- reactomeEnrichment(res)
+res.pathway[[2]]
+```
+
+```
+## [1] 2
+```
+
+```r
+grid.table(res.pathway[[1]][1:20, ], gp = gpar(fontsize = 6))
+```
+
+<img src="img/limmaOnTreatmentCombat.png" title="plot of chunk limmaOnTreatmentCombat" alt="plot of chunk limmaOnTreatmentCombat" width="700" />
+
+
+Let's have a look at top 50 differentially expressed genes. Multiple probes for the same gene are collapsed to one by maximum expression level.
+
+
+```r
+degs <- collapseRows(combat_edata[rownames(res), ], annot.f[rownames(res), "GeneName"], rownames(res))
+# Sort the collapsed data by the largest absolute fold change
+maxRatio <- rowMeans(degs$datETcollapsed[, meta$MicroarrayClass == "PSS"]) - rowMeans(degs$datETcollapsed[, meta$MicroarrayClass == 
+    "AC"])
+degs.sorted <- degs$datETcollapsed[order(abs(maxRatio), decreasing = T), order(meta$MicroarrayClass)]
+# Or just use the most significant data, columns reordered degs.sorted <- degs$datETcollapsed[,
+# order(meta$MicroarrayClass)]
+color <- colorRampPalette(c("blue", "white", "red"))
+if (HIDE) labCol <- "" else labCol <- colnames(degs.sorted)
+if (HIDE) labRow <- "" else labRow <- rownames(degs.sorted)
+heatmap.2(degs.sorted[1:50, ], Colv = F, Rowv = F, scale = "row", trace = "none", col = color, key = F, density.info = "none", 
+    cexCol = 1, cexRow = 0.8, labCol = labCol, labRow = labRow[1:50])  #, cellnote=formatC(1/10^abs(mtx), format='e', digits=2), notecol='darkgreen')
+```
+
+<img src="img/limmaVisual.png" title="plot of chunk limmaVisual" alt="plot of chunk limmaVisual" width="700" />
+
+
+
+Machine learning on clinical meta-data
+---------------------------------------
 

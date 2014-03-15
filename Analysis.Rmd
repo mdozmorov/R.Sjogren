@@ -2,48 +2,80 @@ Sjogren syndrome microarray data analysis
 ========================================================
 Topics to be covered:
 * Data preparation
-* Batch effect investigation
 * Using ComBat to account for batch effect
 * Machine learning on clinical meta-data
-
-Data preparation
---------------------
 
 ```{r setup, echo=FALSE, include=FALSE, cache=FALSE}
 # Set up the environment
 library(knitr) 
-opts_chunk$set(cache.path='cache/', fig.path='img/', cache=TRUE, tidy=T, fig.keep='high', echo=T, dpi=300, out.width=700)
+opts_chunk$set(cache.path='cache/', fig.path='img/', cache=F, tidy=T, fig.keep='high', echo=T, dpi=300, out.width=700)
 options(replace.assign=TRUE, width=120)
+set.seed(1)
+HIDE=T # If true, mask any data labels
 ```
 
-```{r loadLibraries, echo=FALSE}
+```{r loadLibraries, echo=FALSE, warning=FALSE, message=FALSE}
 # Load necessary packages
+suppressMessages(library(Biobase))
+suppressMessages(library(org.Hs.eg.db))
+suppressMessages(library(reactome.db))
+suppressMessages(library(arrayQualityMetrics))
 suppressMessages(library(limma))
+suppressMessages(library(sva))
+suppressMessages(library(WGCNA))
+suppressMessages(library(gplots))
+suppressMessages(library(RColorBrewer))
+suppressMessages(library(tspair))
+suppressMessages(library(gridExtra))
+# Preparing environment for remapping Gene Symbols to Entrez IDs
+x <- org.Hs.egSYMBOL2EG
+# Get the entrez gene identifiers that are mapped to a gene symbol
+mapped_genes <- mappedkeys(x)
+# Convert to a list
+xx <- as.list(x[mapped_genes])
+
 ```
 
-`annot.txt` is taken from `Single-experiment raw data3//annot3.txt`
+```{r pathwayEnrichment, echo=FALSE}
+# Perform enrichment analysis of topTable produced by limma
+# Returns a list of the results, and total count of significant enrichments
+reactomeEnrichment <- function(res){
+  res.genes <- as.character(unique(annot.f[rownames(res), "GeneName"]))
+  # Convert selected and all gene names to Entrez IDs, removing NAs
+  sel.entrez <- unlist(xx)[res.genes]; sel.entrez <- sel.entrez[!is.na(sel.entrez)]
+  all.entrez <- unlist(xx)[unique(annot.f[, "GeneName"])]; all.entrez <- all.entrez[!is.na(all.entrez)]
+  # Prepare pathways and counts
+  entrez2path <- as.list(reactomeEXTID2PATHID) # EntrezIDs to pathway IDs mapping
+  sel.counts <- table(unlist(entrez2path[sel.entrez])) # Selected gene counts in pathways
+  all.counts <- table(unlist(entrez2path[all.entrez])) # All gene counts
+  n.sel <- length(sel.entrez) # Total number of selected genes
+  n.all <- length(all.entrez) # Total number of all genes
+  pathways <- names(sel.counts) # PAthways to test for enrichment
+  pathway.names <- as.list(reactomePATHID2NAME) # Pathway ID to name mapping
+  # For each pathway, construct 2x2 contingency table and calculate the enrichment p-value using Fisher's exact test
+  result <- lapply(pathways, function(p) {
+                   sel <- sel.counts[[p]] 
+                   all <- all.counts[[p]]
+                   pathway.name <- pathway.names[[p]]
+                   m <- matrix(c(sel, all, n.sel-sel, n.all-all),
+                               byrow=T,nrow=2)
+                   p.value <- fisher.test(m, alternative="greater")$p.value
+                   data.frame(PathwayID=p, 
+                              Pathway=pathway.name,
+                              N.Selected=sel,
+                              N.In.Category=all,
+                              p.value=p.value)
+  })
+  result <- as.data.frame(do.call(rbind, result)) # Convert list to data frame
+  result <- result[order(result$p.value),] # Order by p-value
+  result <- cbind(result, p.adjust(result$p.value, method="BH")) # Append corrected for multiple testing p-value
+  colnames(result)[length(colnames(result))] <- "p.adj"
+  return(list(result, sum(result$p.adj < 0.05)))
+}
+```
 
-`data.txt` are combined from `01.Data.Analysis.xlsx` and `11.Data.xlsx`.
-
-`meta1.txt` is taken from `11 Annotations final cohorts sheet 2 20DEC13 DF.xlsx` and contains cohort information. The data has been transposed  to have patients names as columns for compatibility with `data.txt`
-
-`meta2.txt` is taken from `20140214FarrisMicroarraymgdb(1).xlsx` (03-13-2014). The data has been transposed. Patient `p1033680-6` has been renamed to `p1033680-6 (-5)` to be compatible with `data.txt` headers.
-
-```{r loadData, cache=TRUE, echo=FALSE}
-# Full annotations. To avoid R errors on special characters, in Excel select "Description" column, use Ctrl+1, Custom category, \"@\" type
-annot.f <- read.table("data//annot_full.txt",sep="\t", quote="\"", header=T, as.is=T) 
-annot.f <- apply(annot.f, 2, function(x){sapply(x, function(y){gsub("\"", "", y)})}) # Remove \"
-colnames(annot.f) <- c("ProbeName", "GeneName", "SystematicName", "Description") # Rename columns
-rownames(annot.f) <- paste("gene", seq(1, nrow(annot.f)), sep="") # Dummy row names, to be later used for merging
-# Expression data
-exprs <- as.matrix(read.table("data//data.txt", sep="\t", header=T))
-# Meta data
-meta1 <- read.table("data//meta1.txt", sep="\t", header=T, row.names=1) # Has cohort
-meta2 <- read.table("data//meta2.txt", sep="\t", header=T, row.names=1) # Has other clinical parameters
-meta12 <- as.data.frame(rbind(meta1[1:2, intersect(colnames(meta1), colnames(meta2))], 
-                              meta2[, intersect(colnames(meta1), colnames(meta2))])) # Need only the first two parameters from meta1. Join vertically by common names
-patients <- colnames(meta12)[meta12["Microarray Class", ] == "AC" | meta12["Microarray Class", ] == "PSS"] # Should be 34. 
-
+```{r loadDataFunctions, echo=FALSE}
+# Load meta- and expression data, specifying outlier IDs
 loadMeta <- function(outliersRemove){ # Load meta data
   p <- patients
   if (outliersRemove) {p <- patients[!patients %in% c("p1033216.2", "p1033680.6...5.")]}
@@ -60,48 +92,174 @@ loadExprs <- function(outliersRemove){ # Load expression data
   rownames(exprs.n) <- paste("gene", seq(1,nrow(exprs.n)), sep="") # Dummy row names, to be later used for merging
   return(exprs.n) # Subsetting
 }
+
 ```
 
 ```{r prinComponents, echo=FALSE}
 prinComponents <- function(exprs) {
   #summary(prcomp(log10(exprs)))
-  pca<-prcomp(log2(exprs))$rotation
+  pca<-prcomp(exprs)$rotation
   x = pca[,1]; y = pca[,2]
-  xadj<-0.1*(max(x)-min(x)); yadj<-0.1*(max(y)-min(y))
+  xadj<-0.1*(max(x)-min(x)); yadj<-0.1*(max(y)-min(y)) 
   plot(x,y,xlab="PC1", ylab="PC2", main="PC analysis on cohorts",
      xlim=c(min(x) - xadj, max(x) + xadj), ylim=c(min(y) - yadj, max(y) + yadj),
      pch=ifelse(meta$Cohort == 1, 1, 2),
      col=ifelse(meta$MicroarrayClass == "AC", "red", "blue")) 
-  text(x,y+0.03,labels=rownames(pca), cex=0.7)
+  if (!HIDE) text(x,y+0.03,labels=rownames(pca), cex=0.7)
   legend("bottomright", c("Cohort1/AC", "Cohort2/AC", "Cohort1/PCC", "Cohort2/PCC"), 
       col=c("red","red","blue","blue"),
       pch=c(1,2,1,2))
 }
 ```
 
-Principal component analysis of the original data, two groups and two cohorts.
+```{r limma, echo=FALSE}
+limmaOnData <- function(exprs, modFactor, fileName){ # Limma on the expression matrix and a level from meta
+  mod<-model.matrix(~as.factor(eval(parse(text=modFactor))), data=meta) # The meta data should exist
+  colnames(mod)[2]<-"outcome"
+  eset.0 <- new("ExpressionSet", exprs=as.matrix(exprs))
+  fit <- lmFit(eset.0, mod)
+  fit2 <- eBayes(fit)
+  res <- topTable(fit2, coef="outcome", number=nrow(exprs(eset.0)), adjust.method="BH", p.value=0.1)
+  write.table(merge(res, annot.f, by="row.names"), paste("results//", fileName, sep=""), sep="\t", row.names=F)
+  return(res)
+}
+```
+
+Data preparation
+--------------------
+
+`annot.txt` is taken from `Single-experiment raw data3//annot3.txt`
+
+`data.txt` are combined from `01.Data.Analysis.xlsx` and `11.Data.xlsx`.
+
+`meta1.txt` is taken from `11 Annotations final cohorts sheet 2 20DEC13 DF.xlsx` and contains cohort information. The data has been transposed  to have patients names as columns for compatibility with `data.txt`
+
+`meta2.txt` is taken from `20140214FarrisMicroarraymgdb(1).xlsx` (accessed on 03-13-2014). The data has been transposed. ID `p1033680-6` has been renamed to `p1033680-6 (-5)` to be compatible with the `data.txt` header.
+
+```{r loadData, cache=TRUE, echo=FALSE}
+# Full annotations. To avoid R errors on special characters, in Excel select "Description" column, use Ctrl+1, Custom category, \"@\" type
+annot.f <- as.data.frame(read.table("data//annot_full.txt",sep="\t", quote="\"", header=T, as.is=T))
+annot.f <- apply(annot.f, 2, function(x){sapply(x, function(y){gsub("\"", "", y)})}) # Remove \"
+colnames(annot.f) <- c("ProbeName", "GeneName", "SystematicName", "Description") # Rename columns
+rownames(annot.f) <- paste("gene", seq(1, nrow(annot.f)), sep="") # Dummy row names, to be later used for merging
+# Expression data
+exprs <- as.matrix(read.table("data//data.txt", sep="\t", header=T))
+# Meta data
+meta1 <- read.table("data//meta1.txt", sep="\t", header=T, row.names=1) # Has cohort
+meta2 <- read.table("data//meta2.txt", sep="\t", header=T, row.names=1) # Has other clinical parameters
+meta12 <- as.data.frame(rbind(meta1[1:2, intersect(colnames(meta1), colnames(meta2))], 
+                              meta2[, intersect(colnames(meta1), colnames(meta2))])) # Need only the first two parameters from meta1. Join vertically by common names
+patients <- colnames(meta12)[meta12["Microarray Class", ] == "AC" | meta12["Microarray Class", ] == "PSS"] # We use only two treatment conditions. Should be 34 patients. 
+```
+
+To identify the largest source of variability within the data, we perform principal component analysis and color the samples by Cohort/Treatment status.
 
 ```{r dataWithOutliers}
 outliersRemove <- FALSE
 meta <- loadMeta(outliersRemove)
 exprs.n <- loadExprs(outliersRemove)
-prinComponents(exprs.n)
+# arrayQualityMetrics(new("ExpressionSet", exprs=exprs.n), outdir="arrayQC_WithOutliers")
 ```
 
-Clearly, cohorts are heavily different. The two patients, p1033216.2 and p1033680.6...5., appear as outliers - remove them and loot at the principal components again.
+```{r PCAwithOutliers}
+prinComponents(log2(exprs.n))
+```
 
-```{r noOutliers}
+Clearly, the cohorts are very different. The two patients, p1033216.2 and p1033680.6...5., appear as outliers. They are also picked up by the _arrayQualityMetrics_ set of tests. 
+
+We remove them and look at the principal components again.
+
+```{r dataWithoutOutliers}
 outliersRemove <- TRUE
 meta <- loadMeta(outliersRemove)
 exprs.n <- loadExprs(outliersRemove)
-prinComponents(exprs.n)
+# arrayQualityMetrics(new("ExpressionSet", exprs=exprs.n), outdir="arrayQC_WithoutOutliers")
 ```
 
-Batch effect investigation
+```{r PCAwithoutOutliers}
+prinComponents(log2(exprs.n))
+```
+
+The data looks more homogeneous now, with the cohort effect still dominating.
+
+To further investigate how the outliers affect differential gene expression, we will perform differential expression _limma_ analysis on the expression data with and without outlier, as well as check for the enriched pathways. 
+
+```{r limmaWithOutliers}
+<<dataWithOutliers>>
+res <- limmaOnData(exprs.n, "MicroarrayClass", "limma_MicroarrayClass_WithOutliers_WithBatch.txt")
+nrow(res)
+res.pathway <- reactomeEnrichment(res)
+res.pathway[[2]]
+```
+
+Not many probes are differentially expressed out of `r nrow(exprs.n)` total. No pathway enrichment either.
+
+```{r limmaWitouthOutliers}
+<<dataWithoutOutliers>>
+res <- limmaOnData(exprs.n, "MicroarrayClass", "limma_MicroarrayClass_WithoutOutliers_WithBatch.txt")
+nrow(res)
+res.pathway <- reactomeEnrichment(res)
+res.pathway[[2]]
+```
+
+Removing the outliers definitely helps to improve sensitivity in detecting differentially expressed genes. But not enough to see any pathway enrichment.
+
 Using ComBat to account for batch effect
+-----------------------------------------
+
+To investigate batch effect in raw data, we will test the differences between the cohorts of patients, without considering their treatment status. The outliers were removed.
+
+```{r limmaCohorts}
+res <- limmaOnData(exprs.n, "Cohort", "limma_Cohorts_WithoutOutliers_WithBatch.txt")
+nrow(res)
+res.pathway <- reactomeEnrichment(res)
+res.pathway[[2]]
+```
+
+Almost 1/3 of the probes are differentially expressed between cohorts. They show no pathway enrichment.
+
+We use ComBat to manually adjust for the cohort effect and keep the treatment effect. If we look at the PCA plot after the adjustment, the data look more homogeneous, and the cohorts are now mixed together.
+
+```{r combat}
+combat_edata <- ComBat(dat=exprs.n, batch=meta$Cohort, mod=model.matrix(~as.factor(MicroarrayClass), data=meta), numCovs=NULL, par.prior=TRUE, prior.plots=F)
+prinComponents(combat_edata)
+```
+
+And no differentially expressed genes can be detected after removing the batch effect.
+
+```{r limmaOnCohortCombat}
+res<-limmaOnData(combat_edata, "Cohort", "limma_Cohort_WithoutOutliers_WithoutBatch.txt")
+nrow(res)
+```
+
+After removing batch effect, We not only get more differentially expressed genes, but also enriched pathways. Top 20 are shown
+
+```{r limmaOnTreatmentCombat}
+res <- limmaOnData(combat_edata, "MicroarrayClass", "limma_MicroarrayClass_WithoutOutliers_WithoutBatch.txt")
+nrow(res)
+res.pathway <- reactomeEnrichment(res)
+res.pathway[[2]]
+grid.table(res.pathway[[1]][1:20, ], gp=gpar(fontsize=6))
+```
+
+Let's have a look at top 50 differentially expressed genes. Multiple probes for the same gene are collapsed to one by maximum expression level.
+
+```{r limmaVisual, warning=FALSE, fig.height=9}
+degs <- collapseRows(combat_edata[rownames(res), ], annot.f[rownames(res), "GeneName"], rownames(res))
+# Sort the collapsed data by the largest absolute fold change
+maxRatio <- rowMeans(degs$datETcollapsed[, meta$MicroarrayClass == "PSS"])-
+           rowMeans(degs$datETcollapsed[, meta$MicroarrayClass == "AC"])
+degs.sorted <- degs$datETcollapsed[order(abs(maxRatio), decreasing=T), 
+                                  order(meta$MicroarrayClass)]
+# Or just use the most significant data, columns reordered
+# degs.sorted <- degs$datETcollapsed[, order(meta$MicroarrayClass)]
+color <- colorRampPalette(c("blue", "white", "red"))
+if (HIDE) labCol="" else labCol=colnames(degs.sorted)
+if (HIDE) labRow="" else labRow=rownames(degs.sorted)
+heatmap.2(degs.sorted[1:50, ], Colv=F, Rowv=F, scale="row", trace="none", col=color, key=F, density.info="none", cexCol=1, cexRow=0.8, labCol=labCol, labRow=labRow[1:50])#, cellnote=formatC(1/10^abs(mtx), format="e", digits=2), notecol='darkgreen')
+```
+
+
 Machine learning on clinical meta-data
-
-
-
-
+---------------------------------------
 
