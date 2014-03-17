@@ -3,7 +3,7 @@ Sjogren syndrome microarray data analysis
 Topics to be covered:
 * Data preparation
 * Using ComBat to account for batch effect
-* Machine learning on clinical meta-data
+* TODO
 
 ```{r setup, echo=FALSE, include=FALSE, cache=FALSE}
 # Set up the environment
@@ -39,7 +39,8 @@ xx <- as.list(x[mapped_genes])
 ```{r pathwayEnrichment, echo=FALSE}
 # Perform enrichment analysis of topTable produced by limma
 # Returns a list of the results, and total count of significant enrichments
-reactomeEnrichment <- function(res){
+reactomeEnrichment <- function(res)
+{
   res.genes <- as.character(unique(annot.f[rownames(res), "GeneName"]))
   # Convert selected and all gene names to Entrez IDs, removing NAs
   sel.entrez <- unlist(xx)[res.genes]; sel.entrez <- sel.entrez[!is.na(sel.entrez)]
@@ -53,7 +54,8 @@ reactomeEnrichment <- function(res){
   pathways <- names(sel.counts) # PAthways to test for enrichment
   pathway.names <- as.list(reactomePATHID2NAME) # Pathway ID to name mapping
   # For each pathway, construct 2x2 contingency table and calculate the enrichment p-value using Fisher's exact test
-  result <- lapply(pathways, function(p) {
+  result <- lapply(pathways, function(p) 
+  {
                    sel <- sel.counts[[p]] 
                    all <- all.counts[[p]]
                    pathway.name <- pathway.names[[p]]
@@ -65,7 +67,8 @@ reactomeEnrichment <- function(res){
                               N.Selected=sel,
                               N.In.Category=all,
                               p.value=p.value)
-  })
+  }
+  ) # End lapply
   result <- as.data.frame(do.call(rbind, result)) # Convert list to data frame
   result <- result[order(result$p.value),] # Order by p-value
   result <- cbind(result, p.adjust(result$p.value, method="BH")) # Append corrected for multiple testing p-value
@@ -76,7 +79,8 @@ reactomeEnrichment <- function(res){
 
 ```{r loadDataFunctions, echo=FALSE}
 # Load meta- and expression data, specifying outlier IDs
-loadMeta <- function(outliersRemove){ # Load meta data
+loadMeta <- function(outliersRemove)
+{ # Load meta data
   p <- patients
   if (outliersRemove) {p <- patients[!patients %in% c("p1033216.2", "p1033680.6...5.")]}
   meta <- as.data.frame(t(meta12[, p])) # Subsetting
@@ -84,7 +88,8 @@ loadMeta <- function(outliersRemove){ # Load meta data
   return(meta)
 }
 
-loadExprs <- function(outliersRemove){ # Load expression data
+loadExprs <- function(outliersRemove)
+{ # Load expression data
   p <- patients
   if (outliersRemove) {p <- patients[!patients %in% c("p1033216.2", "p1033680.6...5.")]}
   exprs.n <- log2(normalizeQuantiles(exprs[, p]))
@@ -96,7 +101,8 @@ loadExprs <- function(outliersRemove){ # Load expression data
 ```
 
 ```{r prinComponents, echo=FALSE}
-prinComponents <- function(exprs) {
+prinComponents <- function(exprs)
+{
   #summary(prcomp(log10(exprs)))
   pca<-prcomp(exprs)$rotation
   x = pca[,1]; y = pca[,2]
@@ -113,7 +119,9 @@ prinComponents <- function(exprs) {
 ```
 
 ```{r limma, echo=FALSE}
-limmaOnData <- function(exprs, modFactor, fileName){ # Limma on the expression matrix and a level from meta
+# Limma on the expression matrix and a level from meta
+limmaOnData <- function(exprs, modFactor, fileName)
+{
   mod<-model.matrix(~as.factor(eval(parse(text=modFactor))), data=meta) # The meta data should exist
   colnames(mod)[2]<-"outcome"
   eset.0 <- new("ExpressionSet", exprs=as.matrix(exprs))
@@ -259,7 +267,12 @@ if (HIDE) labRow="" else labRow=rownames(degs.sorted)
 heatmap.2(degs.sorted[1:50, ], Colv=F, Rowv=F, scale="row", trace="none", col=color, key=F, density.info="none", cexCol=1, cexRow=0.8, labCol=labCol, labRow=labRow[1:50])#, cellnote=formatC(1/10^abs(mtx), format="e", digits=2), notecol='darkgreen')
 ```
 
+TODO:
 
-Machine learning on clinical meta-data
----------------------------------------
+* Add KEGG and GO enrichment analyses
 
+* Differential expression on other categorical clinical parameters
+
+* Simple correlation of genes with  numerical clinical parameters
+
+* Machine learning on clinical meta-data

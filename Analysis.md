@@ -3,7 +3,7 @@ Sjogren syndrome microarray data analysis
 Topics to be covered:
 * Data preparation
 * Using ComBat to account for batch effect
-* Machine learning on clinical meta-data
+* TODO
 
 
 
@@ -275,7 +275,12 @@ heatmap.2(degs.sorted[1:50, ], Colv = F, Rowv = F, scale = "row", trace = "none"
 <img src="img/limmaVisual.png" title="plot of chunk limmaVisual" alt="plot of chunk limmaVisual" width="700" />
 
 
+TODO:
 
-Machine learning on clinical meta-data
----------------------------------------
+* Add KEGG and GO enrichment analyses
 
+* Differential expression on other categorical clinical parameters
+
+* Simple correlation of genes with  numerical clinical parameters
+
+* Machine learning on clinical meta-data
