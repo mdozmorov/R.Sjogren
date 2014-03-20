@@ -52,6 +52,9 @@ Topics to be covered:
 
 
 
+
+
+
 Data preparation
 --------------------
 
@@ -226,7 +229,12 @@ nrow(res)
 ```
 
 
-After removing batch effect, We not only get more differentially expressed genes, but also enriched pathways. Top 20 are shown
+Enrichment analysis
+===================
+Reactome canonical pathway enrichment analysis
+----------------------------------------------
+
+After removing batch effect, we not only get more differentially expressed genes, but also enriched pathways. The total number, and the top 20 most tignificant pathways are shown.
 
 
 ```r
@@ -275,9 +283,68 @@ heatmap.2(degs.sorted[1:50, ], Colv = F, Rowv = F, scale = "row", trace = "none"
 <img src="img/limmaVisual.png" title="plot of chunk limmaVisual" alt="plot of chunk limmaVisual" width="700" />
 
 
-TODO:
+Gene ontology enrichment analysis
+-------------------------------------
 
-* Add KEGG and GO enrichment analyses
+First, look at the total number and the top 20 significant ontologies in the "Biological Process" space (Normally, most informative functions).
+
+
+```r
+res.go <- GOEnrichment(res, "BP")
+res.go[[2]]
+```
+
+```
+## [1] 490
+```
+
+```r
+grid.table(res.go[[1]][1:20, ], gp = gpar(fontsize = 6))
+```
+
+<img src="img/GOBPEnrichment.png" title="plot of chunk GOBPEnrichment" alt="plot of chunk GOBPEnrichment" width="700" />
+
+
+Second, look at the total number and the top 20 significant ontologies in the "Molecular Function" space (Second most informative).
+
+
+```r
+res.go <- GOEnrichment(res, "MF")
+res.go[[2]]
+```
+
+```
+## [1] 84
+```
+
+```r
+grid.table(res.go[[1]][1:20, ], gp = gpar(fontsize = 6))
+```
+
+<img src="img/GOMFEnrichment.png" title="plot of chunk GOMFEnrichment" alt="plot of chunk GOMFEnrichment" width="700" />
+
+
+Finally, look at the total number and the top 20 significant ontologies in the "Cellular Component" space (Least informative).
+
+
+```r
+res.go <- GOEnrichment(res, "CC")
+res.go[[2]]
+```
+
+```
+## [1] 51
+```
+
+```r
+grid.table(res.go[[1]][1:20, ], gp = gpar(fontsize = 6))
+```
+
+<img src="img/GOCCEnrichment.png" title="plot of chunk GOCCEnrichment" alt="plot of chunk GOCCEnrichment" width="700" />
+
+
+
+TODO:
 
 * Differential expression on other categorical clinical parameters
 

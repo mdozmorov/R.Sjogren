@@ -11,7 +11,7 @@ library(knitr)
 opts_chunk$set(cache.path='cache/', fig.path='img/', cache=F, tidy=T, fig.keep='high', echo=T, dpi=300, out.width=700)
 options(replace.assign=TRUE, width=120)
 set.seed(1)
-HIDE=T # If true, mask any data labels
+HIDE=F # If true, mask any data labels
 ```
 
 ```{r loadLibraries, echo=FALSE, warning=FALSE, message=FALSE}
@@ -27,6 +27,8 @@ suppressMessages(library(gplots))
 suppressMessages(library(RColorBrewer))
 suppressMessages(library(tspair))
 suppressMessages(library(gridExtra))
+suppressMessages(library(GO.db))
+suppressMessages(library(GOstats))
 # Preparing environment for remapping Gene Symbols to Entrez IDs
 x <- org.Hs.egSYMBOL2EG
 # Get the entrez gene identifiers that are mapped to a gene symbol
@@ -36,8 +38,37 @@ xx <- as.list(x[mapped_genes])
 
 ```
 
-```{r pathwayEnrichment, echo=FALSE}
-# Perform enrichment analysis of topTable produced by limma
+```{r GOEnrichment, echo=FALSE}
+# Perform GO enrichment analysis of topTable produced by limma.
+# Provide which ontology space to use, "MF", "BP", of "CC"
+# Returns a list of the results, and total count of significant enrichments
+GOEnrichment <- function(res, ont="BP")
+{
+  res.genes <- as.character(unique(annot.f[rownames(res), "GeneName"]))
+  # Convert selected and all gene names to Entrez IDs, removing NAs
+  sel.entrez <- unlist(xx)[res.genes]; sel.entrez <- sel.entrez[!is.na(sel.entrez)]
+  all.entrez <- unlist(xx)[unique(annot.f[, "GeneName"])]; all.entrez <- all.entrez[!is.na(all.entrez)]
+  # Prepare parameters for the GO enrichment analysis
+  params <- new('GOHyperGParams',
+                geneIds=sel.entrez,
+                universeGeneIds=all.entrez,
+                ontology=ont,
+                pvalueCutoff=0.05,
+                conditional=F,
+                testDirection='over',
+                annotation="org.Hs.eg.db"
+  )
+  hgOver <- hyperGTest(params)
+  result <- summary(hgOver)
+  result <- cbind(result, p.adjust(result$Pvalue, method="BH")) # Append corrected for multiple testing p-value
+  colnames(result)[length(colnames(result))] <- "p.adj"
+  result <- result[result$p.adj < 0.1, ] # Subset the results keeping FDR at 10%
+  return(list(result, nrow(result)))
+}
+```
+
+```{r reactomeEnrichment, echo=FALSE}
+# Perform Reactome pathway enrichment analysis of topTable produced by limma
 # Returns a list of the results, and total count of significant enrichments
 reactomeEnrichment <- function(res)
 {
@@ -73,6 +104,7 @@ reactomeEnrichment <- function(res)
   result <- result[order(result$p.value),] # Order by p-value
   result <- cbind(result, p.adjust(result$p.value, method="BH")) # Append corrected for multiple testing p-value
   colnames(result)[length(colnames(result))] <- "p.adj"
+  # result <- result[result$p.adj < 0.1, ] # Subset the results keeping FDR at 10%
   return(list(result, sum(result$p.adj < 0.05)))
 }
 ```
@@ -240,7 +272,12 @@ res<-limmaOnData(combat_edata, "Cohort", "limma_Cohort_WithoutOutliers_WithoutBa
 nrow(res)
 ```
 
-After removing batch effect, We not only get more differentially expressed genes, but also enriched pathways. Top 20 are shown
+Enrichment analysis
+===================
+Reactome canonical pathway enrichment analysis
+----------------------------------------------
+
+After removing batch effect, we not only get more differentially expressed genes, but also enriched pathways. The total number, and the top 20 most tignificant pathways are shown.
 
 ```{r limmaOnTreatmentCombat}
 res <- limmaOnData(combat_edata, "MicroarrayClass", "limma_MicroarrayClass_WithoutOutliers_WithoutBatch.txt")
@@ -267,9 +304,35 @@ if (HIDE) labRow="" else labRow=rownames(degs.sorted)
 heatmap.2(degs.sorted[1:50, ], Colv=F, Rowv=F, scale="row", trace="none", col=color, key=F, density.info="none", cexCol=1, cexRow=0.8, labCol=labCol, labRow=labRow[1:50])#, cellnote=formatC(1/10^abs(mtx), format="e", digits=2), notecol='darkgreen')
 ```
 
-TODO:
+Gene ontology enrichment analysis
+-------------------------------------
 
-* Add KEGG and GO enrichment analyses
+First, look at the total number and the top 20 significant ontologies in the "Biological Process" space (Normally, most informative functions).
+
+```{r GOBPEnrichment}
+res.go <- GOEnrichment(res, "BP")
+res.go[[2]]
+grid.table(res.go[[1]][1:20, ], gp=gpar(fontsize=6))
+```
+
+Second, look at the total number and the top 20 significant ontologies in the "Molecular Function" space (Second most informative).
+
+```{r GOMFEnrichment}
+res.go <- GOEnrichment(res, "MF")
+res.go[[2]]
+grid.table(res.go[[1]][1:20, ], gp=gpar(fontsize=6))
+```
+
+Finally, look at the total number and the top 20 significant ontologies in the "Cellular Component" space (Least informative).
+
+```{r GOCCEnrichment}
+res.go <- GOEnrichment(res, "CC")
+res.go[[2]]
+grid.table(res.go[[1]][1:20, ], gp=gpar(fontsize=6))
+```
+
+
+TODO:
 
 * Differential expression on other categorical clinical parameters
 
