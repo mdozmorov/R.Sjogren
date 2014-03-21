@@ -117,6 +117,7 @@ loadMeta <- function(outliersRemove)
   if (outliersRemove) {p <- patients[!patients %in% c("p1033216.2", "p1033680.6...5.")]}
   meta <- as.data.frame(t(meta12[, p])) # Subsetting
   colnames(meta) <- sapply(colnames(meta), function(x) gsub(" ", "", x)) # Removing spaces from column names
+  write.table(meta, "data//meta.txt", sep="\t", row.names=F) # Store loaded meta data
   return(meta)
 }
 
@@ -185,8 +186,8 @@ rownames(annot.f) <- paste("gene", seq(1, nrow(annot.f)), sep="") # Dummy row na
 # Expression data
 exprs <- as.matrix(read.table("data//data.txt", sep="\t", header=T))
 # Meta data
-meta1 <- read.table("data//meta1.txt", sep="\t", header=T, row.names=1) # Has cohort
-meta2 <- read.table("data//meta2.txt", sep="\t", header=T, row.names=1) # Has other clinical parameters
+meta1 <- read.table("data//meta1.txt", sep="\t", header=T, row.names=1, as.is=T) # Has cohort
+meta2 <- read.table("data//meta2.txt", sep="\t", header=T, row.names=1, as.is=T) # Has other clinical parameters
 meta12 <- as.data.frame(rbind(meta1[1:2, intersect(colnames(meta1), colnames(meta2))], 
                               meta2[, intersect(colnames(meta1), colnames(meta2))])) # Need only the first two parameters from meta1. Join vertically by common names
 patients <- colnames(meta12)[meta12["Microarray Class", ] == "AC" | meta12["Microarray Class", ] == "PSS"] # We use only two treatment conditions. Should be 34 patients. 
