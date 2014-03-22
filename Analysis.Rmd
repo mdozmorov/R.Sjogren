@@ -21,6 +21,7 @@ suppressMessages(library(org.Hs.eg.db))
 suppressMessages(library(reactome.db))
 suppressMessages(library(arrayQualityMetrics))
 suppressMessages(library(limma))
+suppressMessages(library(genefilter))
 suppressMessages(library(sva))
 suppressMessages(library(WGCNA))
 suppressMessages(library(gplots))
@@ -117,7 +118,7 @@ loadMeta <- function(outliersRemove)
   if (outliersRemove) {p <- patients[!patients %in% c("p1033216.2", "p1033680.6...5.")]}
   meta <- as.data.frame(t(meta12[, p])) # Subsetting
   colnames(meta) <- sapply(colnames(meta), function(x) gsub(" ", "", x)) # Removing spaces from column names
-  write.table(meta, "data//meta.txt", sep="\t", row.names=F) # Store loaded meta data
+  write.table(meta, "data//meta.txt", sep="\t", row.names=T) # Store loaded meta data
   return(meta)
 }
 
@@ -278,14 +279,24 @@ Enrichment analysis
 Reactome canonical pathway enrichment analysis
 ----------------------------------------------
 
-After removing batch effect, we not only get more differentially expressed genes, but also enriched pathways. The total number, and the top 20 most tignificant pathways are shown.
+So far we used the complete dataset with 62976 probes. However, probes constantly expressed across the conditions are less interesting to us. To increase power of detecting differentially expressed genes, we filter such constantly expressed genes.
+
+```{r dataFilter}
+# Filtering low variability probes
+combat_edata <- exprs(varFilter(new("ExpressionSet", exprs=combat_edata)))
+nrow(combat_edata)
+```
+
+Almost half of the probes were removed. The number of DEGs expectedly increased (with less probes we have more power to detect DEGs) from 754 to 784.
+
+After removing batch effect, we not only get more differentially expressed genes, but also enriched pathways. The total number, and the top 30 most tignificant pathways are shown.
 
 ```{r limmaOnTreatmentCombat}
 res <- limmaOnData(combat_edata, "MicroarrayClass", "limma_MicroarrayClass_WithoutOutliers_WithoutBatch.txt")
 nrow(res)
 res.pathway <- reactomeEnrichment(res)
 res.pathway[[2]]
-grid.table(res.pathway[[1]][1:20, ], gp=gpar(fontsize=6))
+grid.table(res.pathway[[1]][1:30, ], gp=gpar(fontsize=7))
 ```
 
 Let's have a look at top 50 differentially expressed genes. Multiple probes for the same gene are collapsed to one by maximum expression level.
@@ -304,6 +315,19 @@ if (HIDE) labCol="" else labCol=colnames(degs.sorted)
 if (HIDE) labRow="" else labRow=rownames(degs.sorted)
 heatmap.2(degs.sorted[1:50, ], Colv=F, Rowv=F, scale="row", trace="none", col=color, key=F, density.info="none", cexCol=1, cexRow=0.8, labCol=labCol, labRow=labRow[1:50])#, cellnote=formatC(1/10^abs(mtx), format="e", digits=2), notecol='darkgreen')
 ```
+
+We aggregate probe names negotiating expression of the same gene by maximum fold change (because Ingenuity does it wrong). 
+
+```{r aggregateDegs}
+# Merge limma results and annotations
+tmp <- merge(res, annot.f, by="row.names")
+# Get unique "gene name - max logFC" pairs"
+degs <- aggregate(tmp[, "logFC"], by=list(tmp$GeneName), max)
+# Append description
+degs <- merge(degs, annot.f, by.x="Group.1", by.y="GeneName")
+write.table(degs, "results/limma_MicroarrayClass_WithoutOutliers_WithoutBatch_IPA.txt", sep="\t")
+```
+
 
 Gene ontology enrichment analysis
 -------------------------------------
