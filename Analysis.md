@@ -234,7 +234,23 @@ Enrichment analysis
 Reactome canonical pathway enrichment analysis
 ----------------------------------------------
 
-After removing batch effect, we not only get more differentially expressed genes, but also enriched pathways. The total number, and the top 20 most tignificant pathways are shown.
+So far we used the complete dataset with 62976 probes. However, probes constantly expressed across the conditions are less interesting to us. To increase power of detecting differentially expressed genes, we filter such constantly expressed genes.
+
+
+```r
+# Filtering low variability probes
+combat_edata <- exprs(varFilter(new("ExpressionSet", exprs = combat_edata)))
+nrow(combat_edata)
+```
+
+```
+## [1] 31488
+```
+
+
+Almost half of the probes were removed. The number of DEGs expectedly increased (with less probes we have more power to detect DEGs) from 754 to 784.
+
+After removing batch effect, we not only get more differentially expressed genes, but also enriched pathways. The total number, and the top 30 most tignificant pathways are shown.
 
 
 ```r
@@ -243,7 +259,7 @@ nrow(res)
 ```
 
 ```
-## [1] 754
+## [1] 784
 ```
 
 ```r
@@ -252,11 +268,11 @@ res.pathway[[2]]
 ```
 
 ```
-## [1] 2
+## [1] 6
 ```
 
 ```r
-grid.table(res.pathway[[1]][1:20, ], gp = gpar(fontsize = 6))
+grid.table(res.pathway[[1]][1:30, ], gp = gpar(fontsize = 7))
 ```
 
 <img src="img/limmaOnTreatmentCombat.png" title="plot of chunk limmaOnTreatmentCombat" alt="plot of chunk limmaOnTreatmentCombat" width="700" />
@@ -283,6 +299,19 @@ heatmap.2(degs.sorted[1:50, ], Colv = F, Rowv = F, scale = "row", trace = "none"
 <img src="img/limmaVisual.png" title="plot of chunk limmaVisual" alt="plot of chunk limmaVisual" width="700" />
 
 
+We aggregate probe names summarizing expression of the same gene by maximum fold change (because Ingenuity does it wrong).
+
+
+```r
+# Merge limma results and annotations
+tmp <- merge(res, annot.f, by = "row.names")
+# Get unique 'gene name - max logFC' pairs'
+degs <- aggregate(tmp[, "logFC"], by = list(tmp$GeneName), max)
+write.table(degs, "results/limma_MicroarrayClass_WithoutOutliers_WithoutBatch_IPA.txt", sep = "\t", quote = F, col.names = NA)
+```
+
+
+
 Gene ontology enrichment analysis
 -------------------------------------
 
@@ -295,7 +324,7 @@ res.go[[2]]
 ```
 
 ```
-## [1] 490
+## [1] 640
 ```
 
 ```r
@@ -314,7 +343,7 @@ res.go[[2]]
 ```
 
 ```
-## [1] 84
+## [1] 123
 ```
 
 ```r
@@ -333,7 +362,7 @@ res.go[[2]]
 ```
 
 ```
-## [1] 51
+## [1] 87
 ```
 
 ```r
