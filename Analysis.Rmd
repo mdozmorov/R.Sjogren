@@ -39,11 +39,50 @@ xx <- as.list(x[mapped_genes])
 
 ```
 
+```{r clinCorrel}
+# A wrapper function to visualize top 20 genes best correlated with a clinical parameter,
+# and perform pathway/GO enrichment analysis on top 100 best correlated genes
+clinCorrel <- function(m, fileName=NULL) {
+  corrgenes <- apply(combat_edata, 1, function(x) cor(x, m))
+  corrgenes <- sort(corrgenes, decreasing=T)
+  if (!is.null(fileName)) {
+    write.table(result, paste("results//", fileName, sep=""), sep="\t", row.names=F)
+  }
+  grid.table(merge(corrgenes[1:20], annot.f, by="row.names"), gp=gpar(fontsize=6), core.just="left")
+  return(corrgenes)
+}
+
+clinCorrelPathways <- function(genes, fileName=NULL) {
+  res.pathway <- reactomeEnrichment(as.matrix(genes))
+  message(paste("Number of significant pathways:", res.pathway[[2]]))
+  if (res.pathway[[2]] > 0) {
+    if (!is.null(fileName)) {
+      write.table(result, paste("results//", fileName, sep=""), sep="\t", row.names=F)
+    }
+    if (res.pathway[[2]] > 20) {t <- 20} else {t <- res.pathway[[2]]}
+    grid.table(res.pathway[[1]][1:t, ], gp=gpar(fontsize=6))
+  }  
+}
+
+clinCorrelGOs <- function(genes, fileName=NULL) {
+  res.GO <- GOEnrichment(as.matrix(genes))
+  message(paste("Number of significant ontologies:", res.GO[[2]]))
+  if (res.GO[[2]] > 0) {
+  if (!is.null(fileName)) {
+    write.table(result, paste("results//", fileName, sep=""), sep="\t", row.names=F)
+  }
+  if (res.GO[[2]] > 20) {t <- 20} else {t <-res.GO[[2]]}
+    grid.table(res.GO[[1]][1:t, ], gp=gpar(fontsize=6))
+  }
+}
+
+```
+
 ```{r GOEnrichment, echo=FALSE}
 # Perform GO enrichment analysis of topTable produced by limma.
 # Provide which ontology space to use, "MF", "BP", of "CC"
 # Returns a list of the results, and total count of significant enrichments
-GOEnrichment <- function(res, ont="BP")
+GOEnrichment <- function(res, ont="BP", fileName=NULL)
 {
   res.genes <- as.character(unique(annot.f[rownames(res), "GeneName"]))
   # Convert selected and all gene names to Entrez IDs, removing NAs
@@ -64,6 +103,9 @@ GOEnrichment <- function(res, ont="BP")
   result <- cbind(result, p.adjust(result$Pvalue, method="BH")) # Append corrected for multiple testing p-value
   colnames(result)[length(colnames(result))] <- "p.adj"
   result <- result[result$p.adj < 0.1, ] # Subset the results keeping FDR at 10%
+  if (!is.null(fileName)) {
+    write.table(result, paste("results//", fileName, sep=""), sep="\t", row.names=F)
+  }
   return(list(result, nrow(result)))
 }
 ```
@@ -71,7 +113,7 @@ GOEnrichment <- function(res, ont="BP")
 ```{r reactomeEnrichment, echo=FALSE}
 # Perform Reactome pathway enrichment analysis of topTable produced by limma
 # Returns a list of the results, and total count of significant enrichments
-reactomeEnrichment <- function(res)
+reactomeEnrichment <- function(res, fileName=NULL)
 {
   res.genes <- as.character(unique(annot.f[rownames(res), "GeneName"]))
   # Convert selected and all gene names to Entrez IDs, removing NAs
@@ -106,6 +148,9 @@ reactomeEnrichment <- function(res)
   result <- cbind(result, p.adjust(result$p.value, method="BH")) # Append corrected for multiple testing p-value
   colnames(result)[length(colnames(result))] <- "p.adj"
   # result <- result[result$p.adj < 0.1, ] # Subset the results keeping FDR at 10%
+  if (!is.null(fileName)) {
+    write.table(result, paste("results//", fileName, sep=""), sep="\t", row.names=F)
+  }
   return(list(result, sum(result$p.adj < 0.05)))
 }
 ```
@@ -154,7 +199,7 @@ prinComponents <- function(exprs)
 
 ```{r limma, echo=FALSE}
 # Limma on the expression matrix and a level from meta
-limmaOnData <- function(exprs, modFactor, fileName)
+limmaOnData <- function(exprs, modFactor, fileName=NULL)
 {
   mod<-model.matrix(~as.factor(eval(parse(text=modFactor))), data=meta) # The meta data should exist
   colnames(mod)[2]<-"outcome"
@@ -162,7 +207,9 @@ limmaOnData <- function(exprs, modFactor, fileName)
   fit <- lmFit(eset.0, mod)
   fit2 <- eBayes(fit)
   res <- topTable(fit2, coef="outcome", number=nrow(exprs(eset.0)), adjust.method="BH", p.value=0.1)
-  write.table(merge(res, annot.f, by="row.names"), paste("results//", fileName, sep=""), sep="\t", row.names=F)
+  if (!is.null(fileName)) {
+    write.table(merge(res, annot.f, by="row.names"), paste("results//", fileName, sep=""), sep="\t", row.names=F)
+  }
   return(res)
 }
 ```
@@ -228,7 +275,7 @@ To further investigate how the outliers affect differential gene expression, we 
 
 ```{r limmaWithOutliers}
 <<dataWithOutliers>>
-res <- limmaOnData(exprs.n, "MicroarrayClass", "limma_MicroarrayClass_WithOutliers_WithBatch.txt")
+res <- limmaOnData(exprs.n, "MicroarrayClass")
 nrow(res)
 res.pathway <- reactomeEnrichment(res)
 res.pathway[[2]]
@@ -238,7 +285,7 @@ Not many probes are differentially expressed out of `r nrow(exprs.n)` total. No 
 
 ```{r limmaWitouthOutliers}
 <<dataWithoutOutliers>>
-res <- limmaOnData(exprs.n, "MicroarrayClass", "limma_MicroarrayClass_WithoutOutliers_WithBatch.txt")
+res <- limmaOnData(exprs.n, "MicroarrayClass")
 nrow(res)
 res.pathway <- reactomeEnrichment(res)
 res.pathway[[2]]
@@ -252,7 +299,7 @@ Using ComBat to account for batch effect
 To investigate batch effect in raw data, we will test the differences between the cohorts of patients, without considering their treatment status. The outliers were removed.
 
 ```{r limmaCohorts}
-res <- limmaOnData(exprs.n, "Cohort", "limma_Cohorts_WithoutOutliers_WithBatch.txt")
+res <- limmaOnData(exprs.n, "Cohort")
 nrow(res)
 res.pathway <- reactomeEnrichment(res)
 res.pathway[[2]]
@@ -270,7 +317,7 @@ prinComponents(combat_edata)
 And no differentially expressed genes can be detected after removing the batch effect.
 
 ```{r limmaOnCohortCombat}
-res<-limmaOnData(combat_edata, "Cohort", "limma_Cohort_WithoutOutliers_WithoutBatch.txt")
+res<-limmaOnData(combat_edata, "Cohort")
 nrow(res)
 ```
 
@@ -294,7 +341,7 @@ After removing batch effect, we not only get more differentially expressed genes
 ```{r limmaOnTreatmentCombat}
 res <- limmaOnData(combat_edata, "MicroarrayClass", "limma_MicroarrayClass_WithoutOutliers_WithoutBatch.txt")
 nrow(res)
-res.pathway <- reactomeEnrichment(res)
+res.pathway <- reactomeEnrichment(res, "Cohort_Reactome.txt")
 res.pathway[[2]]
 grid.table(res.pathway[[1]][1:30, ], gp=gpar(fontsize=7))
 ```
@@ -323,7 +370,8 @@ We aggregate probe names summarizing expression of the same gene by maximum fold
 tmp <- merge(res, annot.f, by="row.names")
 # Get unique "gene name - max logFC" pairs"
 degs <- aggregate(tmp[, "logFC"], by=list(tmp$GeneName), max)
-write.table(degs, "results/limma_MicroarrayClass_WithoutOutliers_WithoutBatch_IPA.txt", sep="\t", quote=F, col.names=NA)
+degs.tmp <- merge(degs, tmp, by.x="x", by.y="logFC")
+write.table(degs.tmp, "results/limma_MicroarrayClass_WithoutOutliers_WithoutBatch_IPA.txt", sep="\t", quote=F, col.names=NA)
 ```
 
 
@@ -333,7 +381,7 @@ Gene ontology enrichment analysis
 First, look at the total number and the top 20 significant ontologies in the "Biological Process" space (Normally, most informative functions).
 
 ```{r GOBPEnrichment}
-res.go <- GOEnrichment(res, "BP")
+res.go <- GOEnrichment(res, "BP", "Cohort_GO_BP.txt")
 res.go[[2]]
 grid.table(res.go[[1]][1:20, ], gp=gpar(fontsize=6))
 ```
@@ -355,10 +403,143 @@ grid.table(res.go[[1]][1:20, ], gp=gpar(fontsize=6))
 ```
 
 
+Genes best correlating with clinical parameters
+=====================================
+Interesting clinical parameters are: WUSFvol, SSFvolL, SSFvolR, LGleft, LGright, FS, LaBioRadvalue, RoBioRadvalue, RFvalue. For each clinical parameter, we answer 3 questions:
+
+1) What are the top 20 genes best correlated with a clinical parameter?
+
+2) Are those genes enriched in canonical pathways? Which? In how many?
+
+3) Are those genes enriched in "biological process" gene ontologies? Which? In how many?
+
+WUSFvol
+-----------
+```{r WUSFvol_c1}
+correlGenes <- clinCorrel(meta$WUSFvol)
+```
+
+```{r WUSFvol_c2}
+clinCorrelPathways(correlGenes)
+```
+
+```{r WUSFvol_c3}
+clinCorrelGOs(correlGenes)
+```
+SSFvolL
+-----------
+```{r SSFvolL_c1}
+correlGenes <- clinCorrel(meta$SSFvolL)
+```
+
+```{r SSFvolL_c2}
+clinCorrelPathways(correlGenes)
+```
+
+```{r SSFvolL_c3}
+clinCorrelGOs(correlGenes)
+```
+
+SSFvolR
+-----------
+```{r SSFvolR_c1}
+correlGenes <- clinCorrel(meta$SSFvolR)
+```
+
+```{r SSFvolR_c2}
+clinCorrelPathways(correlGenes)
+```
+
+```{r SSFvolR_c3}
+clinCorrelGOs(correlGenes)
+```
+
+LGleft
+-----------
+```{r LGleft_c1}
+correlGenes <- clinCorrel(meta$LGleft)
+```
+
+```{r LGleft_c2}
+clinCorrelPathways(correlGenes)
+```
+
+```{r LGleft_c3}
+clinCorrelGOs(correlGenes)
+```
+
+LGright
+-----------
+```{r LGright_c1}
+correlGenes <- clinCorrel(meta$LGright)
+```
+
+```{r LGright_c2}
+clinCorrelPathways(correlGenes)
+```
+
+```{r LGright_c3}
+clinCorrelGOs(correlGenes)
+```
+
+FS
+-----------
+```{r FS_c1}
+correlGenes <- clinCorrel(meta$FS)
+```
+
+```{r FS_c2}
+clinCorrelPathways(correlGenes)
+```
+
+```{r FS_c3}
+clinCorrelGOs(correlGenes)
+```
+
+LaBioRadvalue
+-----------
+```{r LaBioRadvalue_c1}
+correlGenes <- clinCorrel(meta$LaBioRadvalue)
+```
+
+```{r LaBioRadvalue_c2}
+clinCorrelPathways(correlGenes)
+```
+
+```{r LaBioRadvalue_c3}
+clinCorrelGOs(correlGenes)
+```
+
+RoBioRadvalue
+-----------
+```{r RoBioRadvalue_c1}
+correlGenes <- clinCorrel(meta$RoBioRadvalue)
+```
+
+```{r RoBioRadvalue_c2}
+clinCorrelPathways(correlGenes)
+```
+
+```{r RoBioRadvalue_c3}
+clinCorrelGOs(correlGenes)
+```
+
+RFvalue
+-----------
+```{r RFvalue_c1}
+correlGenes <- clinCorrel(meta$RFvalue)
+```
+
+```{r RFvalue_c2}
+clinCorrelPathways(correlGenes)
+```
+
+```{r RFvalue_c3}
+clinCorrelGOs(correlGenes)
+```
+
+
+
 TODO:
-
-* Differential expression on other categorical clinical parameters
-
-* Simple correlation of genes with  numerical clinical parameters
 
 * Machine learning on clinical meta-data

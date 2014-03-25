@@ -41,6 +41,54 @@ Topics to be covered:
 
 
 
+```r
+# A wrapper function to visualize top 20 genes best correlated with a clinical parameter, and perform pathway/GO
+# enrichment analysis on top 100 best correlated genes
+clinCorrel <- function(m, fileName = NULL) {
+    corrgenes <- apply(combat_edata, 1, function(x) cor(x, m))
+    corrgenes <- sort(corrgenes, decreasing = T)
+    if (!is.null(fileName)) {
+        write.table(result, paste("results//", fileName, sep = ""), sep = "\t", row.names = F)
+    }
+    grid.table(merge(corrgenes[1:20], annot.f, by = "row.names"), gp = gpar(fontsize = 6), core.just = "left")
+    return(corrgenes)
+}
+
+clinCorrelPathways <- function(genes, fileName = NULL) {
+    res.pathway <- reactomeEnrichment(as.matrix(genes))
+    message(paste("Number of significant pathways:", res.pathway[[2]]))
+    if (res.pathway[[2]] > 0) {
+        if (!is.null(fileName)) {
+            write.table(result, paste("results//", fileName, sep = ""), sep = "\t", row.names = F)
+        }
+        if (res.pathway[[2]] > 20) {
+            t <- 20
+        } else {
+            t <- res.pathway[[2]]
+        }
+        grid.table(res.pathway[[1]][1:t, ], gp = gpar(fontsize = 6))
+    }
+}
+
+clinCorrelGOs <- function(genes, fileName = NULL) {
+    res.GO <- GOEnrichment(as.matrix(genes))
+    message(paste("Number of significant ontologies:", res.GO[[2]]))
+    if (res.GO[[2]] > 0) {
+        if (!is.null(fileName)) {
+            write.table(result, paste("results//", fileName, sep = ""), sep = "\t", row.names = F)
+        }
+        if (res.GO[[2]] > 20) {
+            t <- 20
+        } else {
+            t <- res.GO[[2]]
+        }
+        grid.table(res.GO[[1]][1:t, ], gp = gpar(fontsize = 6))
+    }
+}
+```
+
+
+
 
 
 
@@ -119,7 +167,7 @@ outliersRemove <- FALSE
 meta <- loadMeta(outliersRemove)
 exprs.n <- loadExprs(outliersRemove)
 # arrayQualityMetrics(new('ExpressionSet', exprs=exprs.n), outdir='arrayQC_WithOutliers')
-res <- limmaOnData(exprs.n, "MicroarrayClass", "limma_MicroarrayClass_WithOutliers_WithBatch.txt")
+res <- limmaOnData(exprs.n, "MicroarrayClass")
 nrow(res)
 ```
 
@@ -145,7 +193,7 @@ outliersRemove <- TRUE
 meta <- loadMeta(outliersRemove)
 exprs.n <- loadExprs(outliersRemove)
 # arrayQualityMetrics(new('ExpressionSet', exprs=exprs.n), outdir='arrayQC_WithoutOutliers')
-res <- limmaOnData(exprs.n, "MicroarrayClass", "limma_MicroarrayClass_WithoutOutliers_WithBatch.txt")
+res <- limmaOnData(exprs.n, "MicroarrayClass")
 nrow(res)
 ```
 
@@ -172,7 +220,7 @@ To investigate batch effect in raw data, we will test the differences between th
 
 
 ```r
-res <- limmaOnData(exprs.n, "Cohort", "limma_Cohorts_WithoutOutliers_WithBatch.txt")
+res <- limmaOnData(exprs.n, "Cohort")
 nrow(res)
 ```
 
@@ -220,7 +268,7 @@ And no differentially expressed genes can be detected after removing the batch e
 
 
 ```r
-res <- limmaOnData(combat_edata, "Cohort", "limma_Cohort_WithoutOutliers_WithoutBatch.txt")
+res <- limmaOnData(combat_edata, "Cohort")
 nrow(res)
 ```
 
@@ -263,7 +311,7 @@ nrow(res)
 ```
 
 ```r
-res.pathway <- reactomeEnrichment(res)
+res.pathway <- reactomeEnrichment(res, "Cohort_Reactome.txt")
 res.pathway[[2]]
 ```
 
@@ -307,7 +355,8 @@ We aggregate probe names summarizing expression of the same gene by maximum fold
 tmp <- merge(res, annot.f, by = "row.names")
 # Get unique 'gene name - max logFC' pairs'
 degs <- aggregate(tmp[, "logFC"], by = list(tmp$GeneName), max)
-write.table(degs, "results/limma_MicroarrayClass_WithoutOutliers_WithoutBatch_IPA.txt", sep = "\t", quote = F, col.names = NA)
+degs.tmp <- merge(degs, tmp, by.x = "x", by.y = "logFC")
+write.table(degs.tmp, "results/limma_MicroarrayClass_WithoutOutliers_WithoutBatch_IPA.txt", sep = "\t", quote = F, col.names = NA)
 ```
 
 
@@ -319,7 +368,7 @@ First, look at the total number and the top 20 significant ontologies in the "Bi
 
 
 ```r
-res.go <- GOEnrichment(res, "BP")
+res.go <- GOEnrichment(res, "BP", "Cohort_GO_BP.txt")
 res.go[[2]]
 ```
 
@@ -373,10 +422,323 @@ grid.table(res.go[[1]][1:20, ], gp = gpar(fontsize = 6))
 
 
 
+Genes best correlating with clinical parameters
+=====================================
+Interesting clinical parameters are: WUSFvol, SSFvolL, SSFvolR, LGleft, LGright, FS, LaBioRadvalue, RoBioRadvalue, RFvalue. For each clinical parameter, we answer 3 questions:
+
+1) What are the top 20 genes best correlated with a clinical parameter?
+
+2) Are those genes enriched in canonical pathways? Which? In how many?
+
+3) Are those genes enriched in "biological process" gene ontologies? Which? In how many?
+
+WUSFvol
+-----------
+
+```r
+correlGenes <- clinCorrel(meta$WUSFvol)
+```
+
+<img src="img/WUSFvol_c1.png" title="plot of chunk WUSFvol_c1" alt="plot of chunk WUSFvol_c1" width="700" />
+
+
+
+```r
+clinCorrelPathways(correlGenes)
+```
+
+```
+## Number of significant pathways: 7
+```
+
+<img src="img/WUSFvol_c2.png" title="plot of chunk WUSFvol_c2" alt="plot of chunk WUSFvol_c2" width="700" />
+
+
+
+```r
+clinCorrelGOs(correlGenes)
+```
+
+```
+## Number of significant ontologies: 931
+```
+
+<img src="img/WUSFvol_c3.png" title="plot of chunk WUSFvol_c3" alt="plot of chunk WUSFvol_c3" width="700" />
+
+SSFvolL
+-----------
+
+```r
+correlGenes <- clinCorrel(meta$SSFvolL)
+```
+
+<img src="img/SSFvolL_c1.png" title="plot of chunk SSFvolL_c1" alt="plot of chunk SSFvolL_c1" width="700" />
+
+
+
+```r
+clinCorrelPathways(correlGenes)
+```
+
+```
+## Number of significant pathways: 7
+```
+
+<img src="img/SSFvolL_c2.png" title="plot of chunk SSFvolL_c2" alt="plot of chunk SSFvolL_c2" width="700" />
+
+
+
+```r
+clinCorrelGOs(correlGenes)
+```
+
+```
+## Number of significant ontologies: 931
+```
+
+<img src="img/SSFvolL_c3.png" title="plot of chunk SSFvolL_c3" alt="plot of chunk SSFvolL_c3" width="700" />
+
+
+SSFvolR
+-----------
+
+```r
+correlGenes <- clinCorrel(meta$SSFvolR)
+```
+
+<img src="img/SSFvolR_c1.png" title="plot of chunk SSFvolR_c1" alt="plot of chunk SSFvolR_c1" width="700" />
+
+
+
+```r
+clinCorrelPathways(correlGenes)
+```
+
+```
+## Number of significant pathways: 7
+```
+
+<img src="img/SSFvolR_c2.png" title="plot of chunk SSFvolR_c2" alt="plot of chunk SSFvolR_c2" width="700" />
+
+
+
+```r
+clinCorrelGOs(correlGenes)
+```
+
+```
+## Number of significant ontologies: 931
+```
+
+<img src="img/SSFvolR_c3.png" title="plot of chunk SSFvolR_c3" alt="plot of chunk SSFvolR_c3" width="700" />
+
+
+LGleft
+-----------
+
+```r
+correlGenes <- clinCorrel(meta$LGleft)
+```
+
+<img src="img/LGleft_c1.png" title="plot of chunk LGleft_c1" alt="plot of chunk LGleft_c1" width="700" />
+
+
+
+```r
+clinCorrelPathways(correlGenes)
+```
+
+```
+## Number of significant pathways: 7
+```
+
+<img src="img/LGleft_c2.png" title="plot of chunk LGleft_c2" alt="plot of chunk LGleft_c2" width="700" />
+
+
+
+```r
+clinCorrelGOs(correlGenes)
+```
+
+```
+## Number of significant ontologies: 931
+```
+
+<img src="img/LGleft_c3.png" title="plot of chunk LGleft_c3" alt="plot of chunk LGleft_c3" width="700" />
+
+
+LGright
+-----------
+
+```r
+correlGenes <- clinCorrel(meta$LGright)
+```
+
+<img src="img/LGright_c1.png" title="plot of chunk LGright_c1" alt="plot of chunk LGright_c1" width="700" />
+
+
+
+```r
+clinCorrelPathways(correlGenes)
+```
+
+```
+## Number of significant pathways: 7
+```
+
+<img src="img/LGright_c2.png" title="plot of chunk LGright_c2" alt="plot of chunk LGright_c2" width="700" />
+
+
+
+```r
+clinCorrelGOs(correlGenes)
+```
+
+```
+## Number of significant ontologies: 931
+```
+
+<img src="img/LGright_c3.png" title="plot of chunk LGright_c3" alt="plot of chunk LGright_c3" width="700" />
+
+
+FS
+-----------
+
+```r
+correlGenes <- clinCorrel(meta$FS)
+```
+
+<img src="img/FS_c1.png" title="plot of chunk FS_c1" alt="plot of chunk FS_c1" width="700" />
+
+
+
+```r
+clinCorrelPathways(correlGenes)
+```
+
+```
+## Number of significant pathways: 7
+```
+
+<img src="img/FS_c2.png" title="plot of chunk FS_c2" alt="plot of chunk FS_c2" width="700" />
+
+
+
+```r
+clinCorrelGOs(correlGenes)
+```
+
+```
+## Number of significant ontologies: 931
+```
+
+<img src="img/FS_c3.png" title="plot of chunk FS_c3" alt="plot of chunk FS_c3" width="700" />
+
+
+LaBioRadvalue
+-----------
+
+```r
+correlGenes <- clinCorrel(meta$LaBioRadvalue)
+```
+
+<img src="img/LaBioRadvalue_c1.png" title="plot of chunk LaBioRadvalue_c1" alt="plot of chunk LaBioRadvalue_c1" width="700" />
+
+
+
+```r
+clinCorrelPathways(correlGenes)
+```
+
+```
+## Number of significant pathways: 7
+```
+
+<img src="img/LaBioRadvalue_c2.png" title="plot of chunk LaBioRadvalue_c2" alt="plot of chunk LaBioRadvalue_c2" width="700" />
+
+
+
+```r
+clinCorrelGOs(correlGenes)
+```
+
+```
+## Number of significant ontologies: 931
+```
+
+<img src="img/LaBioRadvalue_c3.png" title="plot of chunk LaBioRadvalue_c3" alt="plot of chunk LaBioRadvalue_c3" width="700" />
+
+
+RoBioRadvalue
+-----------
+
+```r
+correlGenes <- clinCorrel(meta$RoBioRadvalue)
+```
+
+<img src="img/RoBioRadvalue_c1.png" title="plot of chunk RoBioRadvalue_c1" alt="plot of chunk RoBioRadvalue_c1" width="700" />
+
+
+
+```r
+clinCorrelPathways(correlGenes)
+```
+
+```
+## Number of significant pathways: 7
+```
+
+<img src="img/RoBioRadvalue_c2.png" title="plot of chunk RoBioRadvalue_c2" alt="plot of chunk RoBioRadvalue_c2" width="700" />
+
+
+
+```r
+clinCorrelGOs(correlGenes)
+```
+
+```
+## Number of significant ontologies: 931
+```
+
+<img src="img/RoBioRadvalue_c3.png" title="plot of chunk RoBioRadvalue_c3" alt="plot of chunk RoBioRadvalue_c3" width="700" />
+
+
+RFvalue
+-----------
+
+```r
+correlGenes <- clinCorrel(meta$RFvalue)
+```
+
+<img src="img/RFvalue_c1.png" title="plot of chunk RFvalue_c1" alt="plot of chunk RFvalue_c1" width="700" />
+
+
+
+```r
+clinCorrelPathways(correlGenes)
+```
+
+```
+## Number of significant pathways: 7
+```
+
+<img src="img/RFvalue_c2.png" title="plot of chunk RFvalue_c2" alt="plot of chunk RFvalue_c2" width="700" />
+
+
+
+```r
+clinCorrelGOs(correlGenes)
+```
+
+```
+## Number of significant ontologies: 931
+```
+
+<img src="img/RFvalue_c3.png" title="plot of chunk RFvalue_c3" alt="plot of chunk RFvalue_c3" width="700" />
+
+
+
+
 TODO:
-
-* Differential expression on other categorical clinical parameters
-
-* Simple correlation of genes with  numerical clinical parameters
 
 * Machine learning on clinical meta-data
