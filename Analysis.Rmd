@@ -1,8 +1,10 @@
 Sjogren syndrome microarray data analysis
 ========================================================
 Topics to be covered:
-* Data preparation
+* Data preparation, outliers identification and their effect on functional enrichment analyses
 * Using ComBat to account for batch effect
+* KEGG, Reactome, GO enrichment analyses
+* Genes best correlated with clinical parameters, ant their functional significance
 * TODO
 
 ```{r setup, echo=FALSE, include=FALSE, cache=FALSE}
@@ -11,7 +13,7 @@ library(knitr)
 opts_chunk$set(cache.path='cache/', fig.path='img/', cache=F, tidy=T, fig.keep='high', echo=T, dpi=300, out.width=700)
 options(replace.assign=TRUE, width=120)
 set.seed(1)
-HIDE=F # If true, mask any data labels
+HIDE=T # If true, mask any data labels
 ```
 
 ```{r loadLibraries, echo=FALSE, warning=FALSE, message=FALSE}
@@ -43,13 +45,16 @@ xx <- as.list(x[mapped_genes])
 ```{r clinCorrel, echo=FALSE}
 # A wrapper function to visualize top 20 genes best correlated with a clinical parameter,
 # and perform pathway/GO enrichment analysis on top 100 best correlated genes
-clinCorrel <- function(m, fileName=NULL) {
+clinCorrel <- function(m, fileName=NULL, combat_edata=combat_edata) {
   corrgenes <- apply(combat_edata, 1, function(x) rcorr(x, m))
-  corrgenes <- sort(corrgenes, decreasing=T)
+  corrgenes <- cbind(sapply(corrgenes, function(x) x$r[1, 2]), 
+               sapply(corrgenes, function(x) x$P[1, 2]))
+  colnames(corrgenes) <- c("CorrCoeff", "Pval")
+  corrgenes <- corrgenes[order(corrgenes[, "CorrCoeff"], decreasing=T), ]
   if (!is.null(fileName)) {
-    write.table(result, paste("results//", fileName, sep=""), sep="\t", row.names=F)
+    write.table(corrgenes, paste("results//", fileName, sep=""), sep="\t", row.names=F)
   }
-  grid.table(merge(corrgenes[1:20], annot.f, by="row.names"), gp=gpar(fontsize=6), core.just="left")
+  grid.table(merge(corrgenes[1:20, ], annot.f, by="row.names"), gp=gpar(fontsize=6), core.just="left")
   return(corrgenes)
 }
 
@@ -370,7 +375,7 @@ degs.sorted <- degs$datETcollapsed[order(abs(maxRatio), decreasing=T),
 color <- colorRampPalette(c("blue", "white", "red"))
 if (HIDE) labCol="" else labCol=colnames(degs.sorted)
 if (HIDE) labRow="" else labRow=rownames(degs.sorted)
-heatmap.2(degs.sorted[1:50, ], Colv=F, Rowv=F, scale="row", trace="none", col=color, key=F, density.info="none", cexCol=1, cexRow=0.8, labCol=labCol, labRow=labRow[1:50])#, cellnote=formatC(1/10^abs(mtx), format="e", digits=2), notecol='darkgreen')
+heatmap.2(degs.sorted[1:50, ], Colv=F, Rowv=F, scale="row", trace="none", col=color, key=T, density.info="none", cexCol=1, cexRow=0.8, labCol=labCol, labRow=labRow[1:50])#, cellnote=formatC(1/10^abs(mtx), format="e", digits=2), notecol='darkgreen')
 ```
 
 We aggregate probe names summarizing expression of the same gene by maximum fold change (because Ingenuity does it wrong).
@@ -423,129 +428,139 @@ Interesting clinical parameters are: WUSFvol, SSFvolL, SSFvolR, LGleft, LGright,
 
 3) Are those genes enriched in "biological process" gene ontologies? Which? In how many?
 
+We can look at correlations in multiple ways:
+
+1) Clinical parameter with all genes, e.g., clinCorrel(meta$WUSFvol, , combat_edata)
+
+2) Clinical parameter with DEGs only, e.g., clinCorrel(meta$WUSFvol, , combat_edata[rownames(res), ])
+
+3) Current. Clinical parameter with DEGs only in PSS group, e.g., 
+
+Note, bug fixed: Now, GO and KEGG enrichment analyses are done using genes correlating with clinical parameters with p-value < 0.05.
+
 WUSFvol
 -----------
-```{r WUSFvol_c1}
-correlGenes <- clinCorrel(meta$WUSFvol)
+```{r WUSFvol_c1, fig.width=12}
+correlGenes <- clinCorrel(meta$WUSFvol[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
 ```
 
-```{r WUSFvol_c2}
-clinCorrelPathways(correlGenes)
+```{r WUSFvol_c2, fig.height=3, dependson="WUSFvol_c1"}
+clinCorrelPathways(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 ```
 
-```{r WUSFvol_c3}
-clinCorrelGOs(correlGenes)
+```{r WUSFvol_c3, dependson="WUSFvol_c1"}
+clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 ```
 SSFvolL
 -----------
-```{r SSFvolL_c1}
-correlGenes <- clinCorrel(meta$SSFvolL)
+```{r SSFvolL_c1, fig.width=12}
+correlGenes <- clinCorrel(meta$SSFvolL[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
 ```
 
-```{r SSFvolL_c2}
-clinCorrelPathways(correlGenes)
+```{r SSFvolL_c2, fig.height=3, dependson="SSFvolL_c1"}
+clinCorrelPathways(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 ```
 
-```{r SSFvolL_c3}
-clinCorrelGOs(correlGenes)
+```{r SSFvolL_c3, dependson="SSFvolL_c1"}
+clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 ```
 
 SSFvolR
 -----------
-```{r SSFvolR_c1}
-correlGenes <- clinCorrel(meta$SSFvolR)
+```{r SSFvolR_c1, fig.width=12}
+correlGenes <- clinCorrel(meta$SSFvolR[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
 ```
 
-```{r SSFvolR_c2}
-clinCorrelPathways(correlGenes)
+```{r SSFvolR_c2, fig.height=3, dependson="SSFvolR_c1"}
+clinCorrelPathways(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 ```
 
-```{r SSFvolR_c3}
-clinCorrelGOs(correlGenes)
+```{r SSFvolR_c3, dependson="SSFvolR_c1"}
+clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 ```
 
 LGleft
 -----------
-```{r LGleft_c1}
-correlGenes <- clinCorrel(meta$LGleft)
+```{r LGleft_c1, fig.width=12}
+correlGenes <- clinCorrel(meta$LGleft[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
 ```
 
-```{r LGleft_c2}
-clinCorrelPathways(correlGenes)
+```{r LGleft_c2, fig.height=3, dependson="LGleft_c1"}
+clinCorrelPathways(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 ```
 
-```{r LGleft_c3}
-clinCorrelGOs(correlGenes)
+```{r LGleft_c3, dependson="LGleft_c1"}
+clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 ```
 
 LGright
 -----------
-```{r LGright_c1}
-correlGenes <- clinCorrel(meta$LGright)
+```{r LGright_c1, fig.width=12}
+correlGenes <- clinCorrel(meta$LGright[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
 ```
 
-```{r LGright_c2}
-clinCorrelPathways(correlGenes)
+```{r LGright_c2, fig.height=3, dependson="LGright_c1"}
+clinCorrelPathways(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 ```
 
-```{r LGright_c3}
-clinCorrelGOs(correlGenes)
+```{r LGright_c3, dependson="LGright_c1"}
+clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 ```
 
 FS
 -----------
-```{r FS_c1}
-correlGenes <- clinCorrel(meta$FS)
+```{r FS_c1, fig.width=12}
+correlGenes <- clinCorrel(meta$FS[meta$MicroarrayClass == "PSS"], "clinCorrel.FS.genes", combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
 ```
 
-```{r FS_c2}
-clinCorrelPathways(correlGenes)
+```{r FS_c2, dependson="FS_c1"}
+clinCorrelPathways(correlGenes[correlGenes[, "Pval"] < 0.05, ], "clinCorrel.FS.Pathways")
 ```
 
-```{r FS_c3}
-clinCorrelGOs(correlGenes)
+```{r FS_c3, dependson="FS_c1"}
+clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ], "clinCorrel.FS.GO")
 ```
 
 LaBioRadvalue
 -----------
-```{r LaBioRadvalue_c1}
-correlGenes <- clinCorrel(meta$LaBioRadvalue)
+```{r LaBioRadvalue_c1, fig.width=12}
+correlGenes <- clinCorrel(meta$LaBioRadvalue[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
 ```
 
-```{r LaBioRadvalue_c2}
-clinCorrelPathways(correlGenes)
+```{r LaBioRadvalue_c2, dependson="LaBioRadvalue_c1", fig.height=3}
+clinCorrelPathways(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 ```
 
-```{r LaBioRadvalue_c3}
-clinCorrelGOs(correlGenes)
+```{r LaBioRadvalue_c3, dependson="LaBioRadvalue_c1"}
+clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 ```
 
 RoBioRadvalue
 -----------
-```{r RoBioRadvalue_c1}
-correlGenes <- clinCorrel(meta$RoBioRadvalue)
+```{r RoBioRadvalue_c1, fig.width=12}
+correlGenes <- clinCorrel(meta$RoBioRadvalue[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
 ```
 
-```{r RoBioRadvalue_c2}
-clinCorrelPathways(correlGenes)
+```{r RoBioRadvalue_c2, dependson="RoBioRadvalue_c1"}
+clinCorrelPathways(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 ```
 
-```{r RoBioRadvalue_c3}
-clinCorrelGOs(correlGenes)
+```{r RoBioRadvalue_c3, dependson="RoBioRadvalue_c1"}
+clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 ```
 
 RFvalue
 -----------
-```{r RFvalue_c1}
-correlGenes <- clinCorrel(meta$RFvalue)
+```{r RFvalue_c1, fig.width=12}
+correlGenes <- clinCorrel(meta$RFvalue[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
 ```
 
-```{r RFvalue_c2}
-clinCorrelPathways(correlGenes)
+```{r RFvalue_c2, dependson="RFvalue_c1"}
+clinCorrelPathways(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 ```
 
-```{r RFvalue_c3}
-clinCorrelGOs(correlGenes)
+```{r RFvalue_c3, dependson="RFvalue_c1"}
+clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 ```
 
 

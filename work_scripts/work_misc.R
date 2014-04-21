@@ -79,3 +79,8 @@ hclust.method<-"average" # "ward", "single", "complete", "average", "mcquitty", 
 heatmap.2(data.plot,trace="none",col=color, Colv=F, distfun=function(x){dist(x,method=dist.method)}, hclustfun=function(x){hclust(x,method=hclust.method)}, density.info="none",cexCol=1,cexRow=0.8,labRow=annot$GeneName[annot$GeneName %in% query])#, cellnote=formatC(1/10^abs(mtx), format="e", digits=2), notecol='darkgreen')
 
 heatmap.2(t(scale(t(as.matrix((data.collapsed$datETcollapsed))))),trace="none",col=color, Colv=F, distfun=function(x){dist(x,method=dist.method)}, hclustfun=function(x){hclust(x,method=hclust.method)}, density.info="none",cexCol=1,cexRow=0.8,labRow=rownames(data.collapsed$datETcollapsed))#, cellnote=formatC(1/10^abs(mtx), format="e", digits=2), notecol='darkgreen')
+
+# Expression of selected genes
+rownames(annot.f["PDCD1" == annot.f[, "GeneName"], ])
+dt1 <- combat_edata["gene23548", meta$Cohort == 1]
+dt2 <- combat_edata["gene23548", meta$Cohort == 2]
