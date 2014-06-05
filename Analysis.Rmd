@@ -63,7 +63,7 @@ clinCorrelPathways <- function(genes, fileName=NULL) {
   message(paste("Number of significant pathways:", res.pathway[[2]]))
   if (res.pathway[[2]] > 0) {
     if (!is.null(fileName)) {
-      write.table(result, paste("results//", fileName, sep=""), sep="\t", row.names=F)
+      write.table(res.pathway, paste("results//", fileName, sep=""), sep="\t", row.names=F)
     }
     if (res.pathway[[2]] > 20) {t <- 20} else {t <- res.pathway[[2]]}
     grid.table(res.pathway[[1]][1:t, ], gp=gpar(fontsize=6))
@@ -75,7 +75,7 @@ clinCorrelGOs <- function(genes, fileName=NULL) {
   message(paste("Number of significant ontologies:", res.GO[[2]]))
   if (res.GO[[2]] > 0) {
   if (!is.null(fileName)) {
-    write.table(result, paste("results//", fileName, sep=""), sep="\t", row.names=F)
+    write.table(res.GO, paste("results//", fileName, sep=""), sep="\t", row.names=F)
   }
   if (res.GO[[2]] > 20) {t <- 20} else {t <-res.GO[[2]]}
     grid.table(res.GO[[1]][1:t, ], gp=gpar(fontsize=6))

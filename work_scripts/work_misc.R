@@ -1,54 +1,11 @@
+# Create dataset collapsed by gene names
+# After running Analysis.Rmd, we have batch-adjusted low variability filtered combat_edata
 library("WGCNA")
-tmp<-log2(exprs)
-rownames(tmp)<-seq(1,dim(tmp)[[1]])
-datET<-as.matrix(tmp)
-rowGroup<-annot[,2]
-rowID<-rownames(tmp)
-tmp1<-collapseRows(datET,rowGroup,rowID,method="MaxMean")$datETcollapsed
-write.table(tmp1,"F:/WorkOMRF/Databases/ImmGen/ShannonData1.txt",sep="\t")
-
-mtx<-read.table("F:/WorkOMRF/Databases/ImmGen/matrix.txt",sep="\t",header=T,row.names=1)
-IAC<-cor(mtx)
-library(cluster)
-cluster1=hclust(as.dist(1-IAC),method="ward") # "ward", "single", "complete", "average", "mcquitty", "median" or "centroid".
-plot(cluster1, cex=0.1) #,cex=0.7,labels=colnames(tmp))
-
-query<-read.table("clipboard",sep="\t")
-a<-query[,1]
-e<-query[,2]
-write.table(aggregate(e,list(a),min),"clipboard",sep="\t",row.names=F,col.names=F)
-write.table(aggregate(e,list(a),max),"clipboard",sep="\t",row.names=F,col.names=F)
-
-# Prepare the data for barplot
-query<-readLines("clipboard") # read gene names
-unique(annot$GeneName[annot$GeneName %in% query])
-setdiff(query,annot$GeneName[annot$GeneName %in% query])
-data<-exprs.quantile[annot$GeneName %in% query,] # Subset quantile normalized data by these genes
-genenames<-annot$GeneName[annot$GeneName %in% query] # Get gene names
-data<-data[order(genenames),] # Organize by alphabetical order the data
-genenames<-genenames[order(genenames)] # and the genes
-
-#Dirty correlation between cytokines and genes
-tmp2<-read.table("clipboard",sep="\t",header=T,row.names=1) # Read cytokine data from clipboard
-tmp3<-cor(t(tmp2),t(exprs.q.collapsed[query,colnames(tmp2)])) # Correlation between columns, order kept
-write.table(tmp3,"clipboard",sep="\t")
-heatmap.2(tmp3,trace="none",col=color,distfun=function(x){dist(x,method=dist.method)}, hclustfun=function(x){hclust(x,method=hclust.method)}, density.info="none",cexCol=1,cexRow=1) # Visualization
-
-for (i in 1:nrow(tmp2)){
-  cor.minmax<-vector("numeric",nrow(exprs.q.collapsed))
-  for (j in 1:nrow(exprs.q.collapsed)){
-    cor.minmax[j]<-cor(as.numeric(tmp2[i,]),as.numeric(exprs.q.collapsed[j,colnames(tmp2)]))
-  }
-  print(paste(rownames(tmp2)[i],
-              "best correlates with",rownames(exprs.q.collapsed)[cor.minmax == max(cor.minmax)],
-              "at Pearson's",formatC(as.numeric(cor.minmax[cor.minmax == max(cor.minmax)])),
-              "and best anticorrelates with",rownames(exprs.q.collapsed)[cor.minmax ==min(cor.minmax)],
-              "at Pearson's",formatC(as.numeric(cor.minmax[cor.minmax == min(cor.minmax)]))
-              ))
-}
-
-
-
+datET <- as.matrix(combat_edata)
+rowGroup <- annot.f[rownames(combat_edata), 2]# Gene names corresponding to row IDs
+rowID <- rownames(combat_edata) # row IDs from combat_edata
+combat_edata_collapsed <- collapseRows(datET, rowGroup, rowID, method="MaxMean")$datETcollapsed
+write.table(combat_edata_collapsed,"results/combat_edata_collapsed.txt", sep="\t", col.names=NA)
 
 # Heatmap of selected genes
 query<-readLines("clipboard")

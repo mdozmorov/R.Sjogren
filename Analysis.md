@@ -602,9 +602,7 @@ clinCorrelPathways(correlGenes[correlGenes[, "Pval"] < 0.05, ], "clinCorrel.FS.P
 ## Number of significant pathways: 16
 ```
 
-```
-## Error: object 'result' not found
-```
+<img src="img/FS_c2.png" title="plot of chunk FS_c2" alt="plot of chunk FS_c2" width="700" />
 
 
 
@@ -616,9 +614,7 @@ clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ], "clinCorrel.FS.GO")
 ## Number of significant ontologies: 161
 ```
 
-```
-## Error: object 'result' not found
-```
+<img src="img/FS_c3.png" title="plot of chunk FS_c3" alt="plot of chunk FS_c3" width="700" />
 
 
 LaBioRadvalue
