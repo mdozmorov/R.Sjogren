@@ -50,11 +50,14 @@ clinCorrel <- function(m, fileName=NULL, combat_edata=combat_edata) {
   corrgenes <- cbind(sapply(corrgenes, function(x) x$r[1, 2]), 
                sapply(corrgenes, function(x) x$P[1, 2]))
   colnames(corrgenes) <- c("CorrCoeff", "Pval")
+  corrgenes <- merge(corrgenes, annot.f, by="row.names")
   corrgenes <- corrgenes[order(corrgenes[, "CorrCoeff"], decreasing=T), ]
+  rownames(corrgenes) <- corrgenes$Row.names
+  
   if (!is.null(fileName)) {
-    write.table(corrgenes, paste("results//", fileName, sep=""), sep="\t", row.names=F)
+    write.table(corrgenes[,c(2,3,5,7)], paste("results//", fileName, sep=""), sep="\t", row.names=F)
   }
-  grid.table(merge(corrgenes[1:20, ], annot.f, by="row.names"), gp=gpar(fontsize=6), core.just="left")
+  grid.table(corrgenes[,c(2,3,5,7)], gp=gpar(fontsize=6), core.just="left")
   return(corrgenes)
 }
 
@@ -63,7 +66,7 @@ clinCorrelPathways <- function(genes, fileName=NULL) {
   message(paste("Number of significant pathways:", res.pathway[[2]]))
   if (res.pathway[[2]] > 0) {
     if (!is.null(fileName)) {
-      write.table(res.pathway, paste("results//", fileName, sep=""), sep="\t", row.names=F)
+      write.table(res.pathway, paste("results//", fileName, sep=""), sep="\t", row.names=T)
     }
     if (res.pathway[[2]] > 20) {t <- 20} else {t <- res.pathway[[2]]}
     grid.table(res.pathway[[1]][1:t, ], gp=gpar(fontsize=6))
@@ -75,7 +78,7 @@ clinCorrelGOs <- function(genes, fileName=NULL) {
   message(paste("Number of significant ontologies:", res.GO[[2]]))
   if (res.GO[[2]] > 0) {
   if (!is.null(fileName)) {
-    write.table(res.GO, paste("results//", fileName, sep=""), sep="\t", row.names=F)
+    write.table(res.GO, paste("results//", fileName, sep=""), sep="\t", row.names=T)
   }
   if (res.GO[[2]] > 20) {t <- 20} else {t <-res.GO[[2]]}
     grid.table(res.GO[[1]][1:t, ], gp=gpar(fontsize=6))
