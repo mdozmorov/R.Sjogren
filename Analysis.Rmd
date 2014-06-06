@@ -444,7 +444,7 @@ Note, bug fixed: Now, GO and KEGG enrichment analyses are done using genes corre
 WUSFvol
 -----------
 ```{r WUSFvol_c1, fig.width=12}
-correlGenes <- clinCorrel(meta$WUSFvol[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
+correlGenes <- clinCorrel(meta$WUSFvol[meta$MicroarrayClass == "PSS"], "clinCorrel.WUSFvol.genes", combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
 ```
 
 ```{r WUSFvol_c2, fig.height=3, dependson="WUSFvol_c1"}
@@ -457,7 +457,7 @@ clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 SSFvolL
 -----------
 ```{r SSFvolL_c1, fig.width=12}
-correlGenes <- clinCorrel(meta$SSFvolL[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
+correlGenes <- clinCorrel(meta$SSFvolL[meta$MicroarrayClass == "PSS"], "clinCorrel.SSFvolL.genes", combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
 ```
 
 ```{r SSFvolL_c2, fig.height=3, dependson="SSFvolL_c1"}
@@ -471,7 +471,7 @@ clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 SSFvolR
 -----------
 ```{r SSFvolR_c1, fig.width=12}
-correlGenes <- clinCorrel(meta$SSFvolR[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
+correlGenes <- clinCorrel(meta$SSFvolR[meta$MicroarrayClass == "PSS"], "clinCorrel.SSFvolR.genes", combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
 ```
 
 ```{r SSFvolR_c2, fig.height=3, dependson="SSFvolR_c1"}
@@ -485,7 +485,7 @@ clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 LGleft
 -----------
 ```{r LGleft_c1, fig.width=12}
-correlGenes <- clinCorrel(meta$LGleft[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
+correlGenes <- clinCorrel(meta$LGleft[meta$MicroarrayClass == "PSS"], "clinCorrel.LGleft.genes", combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
 ```
 
 ```{r LGleft_c2, fig.height=3, dependson="LGleft_c1"}
@@ -499,7 +499,7 @@ clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 LGright
 -----------
 ```{r LGright_c1, fig.width=12}
-correlGenes <- clinCorrel(meta$LGright[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
+correlGenes <- clinCorrel(meta$LGright[meta$MicroarrayClass == "PSS"], "clinCorrel.LGright.genes", combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
 ```
 
 ```{r LGright_c2, fig.height=3, dependson="LGright_c1"}
@@ -527,7 +527,7 @@ clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ], "clinCorrel.FS.GO")
 LaBioRadvalue
 -----------
 ```{r LaBioRadvalue_c1, fig.width=12}
-correlGenes <- clinCorrel(meta$LaBioRadvalue[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
+correlGenes <- clinCorrel(meta$LaBioRadvalue[meta$MicroarrayClass == "PSS"], "clinCorrel.LaBioRadvalue.genes", combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
 ```
 
 ```{r LaBioRadvalue_c2, dependson="LaBioRadvalue_c1", fig.height=3}
@@ -541,7 +541,7 @@ clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 RoBioRadvalue
 -----------
 ```{r RoBioRadvalue_c1, fig.width=12}
-correlGenes <- clinCorrel(meta$RoBioRadvalue[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
+correlGenes <- clinCorrel(meta$RoBioRadvalue[meta$MicroarrayClass == "PSS"], "clinCorrel.RoBioRadvalue.genes", combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
 ```
 
 ```{r RoBioRadvalue_c2, dependson="RoBioRadvalue_c1"}
@@ -555,7 +555,7 @@ clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 RFvalue
 -----------
 ```{r RFvalue_c1, fig.width=12}
-correlGenes <- clinCorrel(meta$RFvalue[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
+correlGenes <- clinCorrel(meta$RFvalue[meta$MicroarrayClass == "PSS"], "clinCorrel.RFvalue.genes", combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
 ```
 
 ```{r RFvalue_c2, dependson="RFvalue_c1"}
