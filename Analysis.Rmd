@@ -22,7 +22,7 @@ suppressMessages(library(Biobase))
 suppressMessages(library(org.Hs.eg.db))
 suppressMessages(library(reactome.db))
 suppressMessages(library(KEGG.db))
-suppressMessages(library(arrayQualityMetrics))
+#suppressMessages(library(arrayQualityMetrics)) 
 suppressMessages(library(limma))
 suppressMessages(library(genefilter))
 suppressMessages(library(sva))
@@ -57,7 +57,8 @@ clinCorrel <- function(m, fileName=NULL, combat_edata=combat_edata) {
   if (!is.null(fileName)) {
     write.table(corrgenes[,c(2,3,5,7)], paste("results//", fileName, sep=""), sep="\t", row.names=F)
   }
-  grid.table(corrgenes[,c(2,3,5,7)], gp=gpar(fontsize=6), core.just="left")
+  if (nrows(corrgenes) > 20) {t <- 20} else {t <- nrows(corrgenes)}
+  grid.table(corrgenes[1:t, c(2,3,5,7)], gp=gpar(fontsize=6), core.just="left")
   return(corrgenes)
 }
 
@@ -566,8 +567,80 @@ clinCorrelPathways(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
 ```
 
+Genes best correlating with flow counts
+=====================================
+```{r loadFlowData, echo=FALSE}
+flow <- read.table("data//flow.txt", sep="\t", header=T, row.names=1)
+rownames(flow) <- make.names(rownames(flow)) # Make row names compatible with the combat_edata
+flow.mtx <- as.matrix(flow[1:(nrow(flow) - 1), 4:ncol(flow)]) # Remove last patient
+flow.patients <- intersect(rownames(flow.mtx), colnames(combat_edata))
+```
 
+We first check how the flow measurements correlate with each other. Numbers in each cell indicate Pearson's correlation coefficient. It is expected that a measurement will correlate with itself with the coefficient equal to "1".
 
-TODO:
+Things to watch for: Some different measurements show perfect correlation of "1". Should it be so?
 
-* Machine learning on clinical meta-data
+```{r flowCorrel}
+selected <- flow.mtx[,1:11] # Flow counts as percentage
+selected <- flow.mtx[,13:20] # Flow counts as numbers
+class(selected) <- "numeric"
+library(Hmisc)
+flow.cor <- rcorr(selected[complete.cases(selected), ]) 
+dev.off()
+pdf(paste("results", "flowCorrel.pdf", sep="/"))
+par(oma=c(5,0,0,5), mar=c(6, 4.1, 4.1, 6)) # Adjust margins
+color<-colorRampPalette(c("blue","yellow")) # Define color gradient
+# Adjust clustering parameters.
+# Distance: "euclidean", "maximum","manhattan" or "minkowski". Do not use "canberra" or "binary"
+# Clustering: "ward", "single", "complete", "average", "mcquitty", "median" or "centroid"
+dist.method<-"euclidean"  
+hclust.method<-"ward"
+# Make Pearson's coefficients and p-values merged in one cell
+cnote <- matrix(0, nrow=nrow(flow.cor$r), ncol=ncol(flow.cor$r))
+for (i in 1:nrow(flow.cor$r)) {
+  for (j in 1:ncol(flow.cor$r)) {
+    cnote[i, j] <- paste(formatC(flow.cor$r[i, j], format="f", digits=2), formatC(flow.cor$P[i, j], format="e", digits=2), sep="\n")
+  }
+}
+h<-heatmap.2(as.matrix(flow.cor$r), trace="none", density.info="none", col=color,distfun=function(x){dist(x, method=dist.method)}, hclustfun=function(x){hclust(x, method=hclust.method)}, cexRow=0.7, cexCol=0.7, cellnote=cnote , notecex=0.6, notecol='red')
+dev.off()
+```
+
+%CD4+RA-(of CD3+)
+------------------
+```{r pctCD4plusRAminus.of.CD3plus._c1, fig.width=12}
+correlGenes <- clinCorrel(flow.mtx[, "pctCD4plusRAminus.of.CD3plus."], "flowCorrel.pctCD4plusRAminus.of.CD3plus..genes", combat_edata[rownames(res), flow.patients])
+```
+
+```{r X..CD4.RA..of.CD3..._c2, dependson="RFvalue_c1"}
+clinCorrelPathways(correlGenes[correlGenes[, "Pval"] < 0.05, ])
+```
+
+```{r X..CD4.RA..of.CD3..._c3, dependson="RFvalue_c1"}
+clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
+```
+
+%CD8+RA-(of CD3+)    
+-----------------
+```{r pctCD8plusRAminus.of.CD3plus._c1, fig.width=12}
+correlGenes <- clinCorrel(flow.mtx[, "pctCD8plusRAminus.of.CD3plus."], "flowCorrel.pctCD8plusRAminus.of.CD3plus..genes", combat_edata[rownames(res), flow.patients])
+```
+
+%CD4-8-(of CD3+)
+-----------------
+```{r pctCD4minus8minus.of.CD3plus._c1, fig.width=12}
+correlGenes <- clinCorrel(flow.mtx[, "pctCD4minus8minus.of.CD3plus."], "flowCorrel.pctCD4minus8minus.of.CD3plus..genes", combat_edata[rownames(res), flow.patients])
+```
+
+ratio.of.pctCD4plusRAminusperpct.CD8plusRAminus  
+-----------------
+```{r ratio.of.pctCD4plusRAminusperpct.CD8plusRAminus_c1, fig.width=12}
+correlGenes <- clinCorrel(flow.mtx[, "ratio.of.pctCD4plusRAminusperpct.CD8plusRAminus"], "flowCorrel.ratio.of.pctCD4plusRAminusperpct.CD8plusRAminus.genes", combat_edata[rownames(res), flow.patients])
+```
+
+pctCD38hi27hi.of.TN.
+-----------------
+```{r pctCD38hi27hi.of.TN._c1, fig.width=12}
+idx <- !is.na(as.numeric(flow.mtx[, "pctCD38hi27hi.of.TN."]))
+correlGenes <- clinCorrel(flow.mtx[idx, "pctCD38hi27hi.of.TN."], "flowCorrel.pctCD38hi27hi.of.TN..genes", combat_edata[rownames(res), flow.patients[idx]])
+```
