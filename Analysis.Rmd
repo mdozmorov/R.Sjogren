@@ -1,6 +1,7 @@
-Sjogren syndrome microarray data analysis
-========================================================
+# Sjogren syndrome microarray data analysis
+
 Topics to be covered:
+
 * Data preparation, outliers identification and their effect on functional enrichment analyses
 * Using ComBat to account for batch effect
 * KEGG, Reactome, GO enrichment analyses
@@ -10,43 +11,33 @@ Topics to be covered:
 ```{r setup, echo=FALSE, include=FALSE, cache=FALSE}
 # Set up the environment
 library(knitr) 
-opts_chunk$set(cache.path='cache/', fig.path='img/', cache=F, tidy=T, fig.keep='high', echo=T, dpi=300, out.width=700)
+opts_chunk$set(cache.path='cache/', fig.path='img/', cache=F, tidy=T, fig.keep='high', echo=F, dpi=300, out.width=700, message = FALSE, warning = FALSE)
 options(replace.assign=TRUE, width=120)
 set.seed(1)
-HIDE=T # If true, mask any data labels
+HIDE=F # If true, mask any data labels
 ```
 
 ```{r loadLibraries, echo=FALSE, warning=FALSE, message=FALSE}
 # Load necessary packages
-suppressMessages(library(Biobase))
+library(MDmisc)
+library(ReactomePA)
+library(annotables)
+library(xlsx)
+library(dplyr)
 suppressMessages(library(org.Hs.eg.db))
-suppressMessages(library(reactome.db))
-suppressMessages(library(KEGG.db))
-#suppressMessages(library(arrayQualityMetrics)) 
 suppressMessages(library(limma))
 suppressMessages(library(genefilter))
 suppressMessages(library(sva))
-suppressMessages(library(WGCNA))
 suppressMessages(library(gplots))
-suppressMessages(library(RColorBrewer))
-suppressMessages(library(tspair))
 suppressMessages(library(gridExtra))
-suppressMessages(library(GO.db))
-suppressMessages(library(GOstats))
 suppressMessages(library(Hmisc))
-# Preparing environment for remapping Gene Symbols to Entrez IDs
-x <- org.Hs.egSYMBOL2EG
-# Get the entrez gene identifiers that are mapped to a gene symbol
-mapped_genes <- mappedkeys(x)
-# Convert to a list
-xx <- as.list(x[mapped_genes])
 ```
 
 ```{r clinCorrel, echo=FALSE}
 # A wrapper function to visualize top 20 genes best correlated with a clinical parameter,
 # and perform pathway/GO enrichment analysis on top 100 best correlated genes
-clinCorrel <- function(m, fileName=NULL, combat_edata=combat_edata) {
-  corrgenes <- apply(combat_edata, 1, function(x) rcorr(x, m))
+clinCorrel <- function(m, fileName=NULL, edata=edata) {
+  corrgenes <- apply(edata, 1, function(x) rcorr(x, m))
   corrgenes <- cbind(sapply(corrgenes, function(x) x$r[1, 2]), 
                sapply(corrgenes, function(x) x$P[1, 2]))
   colnames(corrgenes) <- c("CorrCoeff", "Pval")
@@ -57,112 +48,27 @@ clinCorrel <- function(m, fileName=NULL, combat_edata=combat_edata) {
   if (!is.null(fileName)) {
     write.table(corrgenes[,c(2,3,5,7)], paste("results//", fileName, sep=""), sep="\t", row.names=F)
   }
-  if (nrows(corrgenes) > 20) {t <- 20} else {t <- nrows(corrgenes)}
-  grid.table(corrgenes[1:t, c(2,3,5,7)], gp=gpar(fontsize=6), core.just="left")
+#  if (nrow(corrgenes) > 20) {t <- 20} else {t <- nrows(corrgenes)}
+#  grid.table(corrgenes[1:t, c(2,3,5,7)], gp=gpar(fontsize=6), core.just="left")
   return(corrgenes)
 }
-
-clinCorrelPathways <- function(genes, fileName=NULL) {
-  res.pathway <- reactomeEnrichment(as.matrix(genes))
-  message(paste("Number of significant pathways:", res.pathway[[2]]))
-  if (res.pathway[[2]] > 0) {
-    if (!is.null(fileName)) {
-      write.table(res.pathway, paste("results//", fileName, sep=""), sep="\t", row.names=T)
-    }
-    if (res.pathway[[2]] > 20) {t <- 20} else {t <- res.pathway[[2]]}
-    grid.table(res.pathway[[1]][1:t, ], gp=gpar(fontsize=6))
-  }  
-}
-
-clinCorrelGOs <- function(genes, fileName=NULL) {
-  res.GO <- Enrichment(as.matrix(genes) , "GO")
-  message(paste("Number of significant ontologies:", res.GO[[2]]))
-  if (res.GO[[2]] > 0) {
-  if (!is.null(fileName)) {
-    write.table(res.GO, paste("results//", fileName, sep=""), sep="\t", row.names=T)
-  }
-  if (res.GO[[2]] > 20) {t <- 20} else {t <-res.GO[[2]]}
-    grid.table(res.GO[[1]][1:t, ], gp=gpar(fontsize=6))
-  }
-}
-
 ```
 
-```{r Enrichment, echo=FALSE}
-# Perform GO enrichment analysis of topTable produced by limma.
-# use use for KEGG of GO enrichment analyses
-# Provide which ontology space to use, "MF", "BP", of "CC"
-# Returns a list of the results, and total count of significant enrichments
-Enrichment <- function(res, use="GO", fileName=NULL, ont="BP")
-{
-  res.genes <- as.character(unique(annot.f[rownames(res), "GeneName"]))
-  # Convert selected and all gene names to Entrez IDs, removing NAs
-  sel.entrez <- unlist(xx)[res.genes]; sel.entrez <- sel.entrez[!is.na(sel.entrez)]
-  all.entrez <- unlist(xx)[unique(annot.f[, "GeneName"])]; all.entrez <- all.entrez[!is.na(all.entrez)]
-  # Prepare parameters for the enrichment analysis
-  if (use == "GO")
-    {
-    params <- new('GOHyperGParams', geneIds=sel.entrez, universeGeneIds=all.entrez, ontology=ont,
- pvalueCutoff=0.05, conditional=F, testDirection='over', annotation="org.Hs.eg.db")
-    }
- else
-   {
-    params <- new('KEGGHyperGParams', geneIds=sel.entrez, universeGeneIds=all.entrez, pvalueCutoff=0.05, testDirection='over', annotation="org.Hs.eg.db") 
-   }
-  hgOver <- hyperGTest(params)
-  result <- summary(hgOver)
-  result <- cbind(result, p.adjust(result$Pvalue, method="BH")) # Append corrected for multiple testing p-value
-  colnames(result)[length(colnames(result))] <- "p.adj"
-  result <- result[result$p.adj < 0.1, ] # Subset the results keeping FDR at 10%
-  if (!is.null(fileName)) {
-    write.table(result, paste("results//", fileName, sep=""), sep="\t", row.names=F)
-  }
-  return(list(result, nrow(result)))
-}
-```
-
-```{r reactomeEnrichment, echo=FALSE}
-# Perform Reactome pathway enrichment analysis of topTable produced by limma
-# Returns a list of the results, and total count of significant enrichments
-reactomeEnrichment <- function(res, fileName=NULL)
-{
-  res.genes <- as.character(unique(annot.f[rownames(res), "GeneName"]))
-  # Convert selected and all gene names to Entrez IDs, removing NAs
-  sel.entrez <- unlist(xx)[res.genes]; sel.entrez <- sel.entrez[!is.na(sel.entrez)]
-  all.entrez <- unlist(xx)[unique(annot.f[, "GeneName"])]; all.entrez <- all.entrez[!is.na(all.entrez)]
-  # Prepare pathways and counts
-  entrez2path <- as.list(reactomeEXTID2PATHID) # EntrezIDs to pathway IDs mapping
-  sel.counts <- table(unlist(entrez2path[sel.entrez])) # Selected gene counts in pathways
-  all.counts <- table(unlist(entrez2path[all.entrez])) # All gene counts
-  n.sel <- length(sel.entrez) # Total number of selected genes
-  n.all <- length(all.entrez) # Total number of all genes
-  pathways <- names(sel.counts) # PAthways to test for enrichment
-  pathway.names <- as.list(reactomePATHID2NAME) # Pathway ID to name mapping
-  # For each pathway, construct 2x2 contingency table and calculate the enrichment p-value using Fisher's exact test
-  result <- lapply(pathways, function(p) 
-  {
-                   sel <- sel.counts[[p]] 
-                   all <- all.counts[[p]]
-                   pathway.name <- pathway.names[[p]]
-                   m <- matrix(c(sel, all, n.sel-sel, n.all-all),
-                               byrow=T,nrow=2)
-                   p.value <- fisher.test(m, alternative="greater")$p.value
-                   data.frame(PathwayID=p, 
-                              Pathway=pathway.name,
-                              N.Selected=sel,
-                              N.In.Category=all,
-                              p.value=p.value)
-  }
-  ) # End lapply
-  result <- as.data.frame(do.call(rbind, result)) # Convert list to data frame
-  result <- result[order(result$p.value),] # Order by p-value
-  result <- cbind(result, p.adjust(result$p.value, method="BH")) # Append corrected for multiple testing p-value
-  colnames(result)[length(colnames(result))] <- "p.adj"
-  # result <- result[result$p.adj < 0.1, ] # Subset the results keeping FDR at 10%
-  if (!is.null(fileName)) {
-    write.table(result, paste("results//", fileName, sep=""), sep="\t", row.names=F)
-  }
-  return(list(result, sum(result$p.adj < 0.05)))
+```{r gene_enrichment, echo=FALSE}
+# A wrapper function to perform all functional enrichment analyses. The 'fileName' should have 'xlsx' extension
+all.enrichment.analyses <- function(genes, fileName, id="symbol") {
+  # Gene ontology, molecular function
+  res <- gene_enrichment(selected = genes, id=id, use="GO", ont="MF")
+  write.xlsx(res, fileName, sheetName = "GO-MF", row.names=FALSE, append=TRUE)
+  # Gene ontology, biological process 
+  res <- gene_enrichment(selected = genes, id=id, use="GO", ont="BP")
+  write.xlsx(res, fileName, sheetName = "GO-BP", row.names=FALSE, append=TRUE)
+  # Gene ontology, cellular component
+  res <- gene_enrichment(selected = genes, id=id, use="GO", ont="CC")
+  write.xlsx(res, fileName, sheetName = "GO-CC", row.names=FALSE, append=TRUE)
+  # KEGG canonical pathways
+  res <- gene_enrichment(selected = genes, id=id, use="KEGG")
+  write.xlsx(res, fileName, sheetName = "KEGG", row.names=FALSE, append=TRUE)
 }
 ```
 
@@ -191,7 +97,7 @@ loadExprs <- function(outliersRemove)
 ```
 
 ```{r prinComponents, echo=FALSE}
-prinComponents <- function(exprs)
+prinComponents <- function(exprs, meta)
 {
   #summary(prcomp(log10(exprs)))
   pca<-prcomp(exprs)$rotation
@@ -210,7 +116,7 @@ prinComponents <- function(exprs)
 
 ```{r limma, echo=FALSE}
 # Limma on the expression matrix and a level from meta
-limmaOnData <- function(exprs, modFactor, fileName=NULL)
+limmaOnData <- function(exprs, meta, modFactor, fileName=NULL)
 {
   mod<-model.matrix(~as.factor(eval(parse(text=modFactor))), data=meta) # The meta data should exist
   colnames(mod)[2]<-"outcome"
@@ -225,8 +131,7 @@ limmaOnData <- function(exprs, modFactor, fileName=NULL)
 }
 ```
 
-Data preparation
---------------------
+## Data preparation
 
 `annot.txt` is taken from `Single-experiment raw data3//annot3.txt`
 
@@ -236,7 +141,7 @@ Data preparation
 
 `meta2.txt` is taken from `20140214FarrisMicroarraymgdb(1).xlsx` (accessed on 03-13-2014). The data has been transposed. ID `p1033680-6` has been renamed to `p1033680-6 (-5)` to be compatible with the `data.txt` header.
 
-```{r loadData, cache=TRUE, echo=FALSE}
+```{r loadData, echo=FALSE}
 # Full annotations. To avoid R errors on special characters, in Excel select "Description" column, use Ctrl+1, Custom category, \"@\" type
 annot.f <- as.data.frame(read.table("data//annot_full.txt",sep="\t", quote="\"", header=T, as.is=T))
 annot.f <- apply(annot.f, 2, function(x){sapply(x, function(y){gsub("\"", "", y)})}) # Remove \"
@@ -256,13 +161,13 @@ To identify the largest source of variability within the data, we perform princi
 
 ```{r dataWithOutliers}
 outliersRemove <- FALSE
-meta <- loadMeta(outliersRemove)
-exprs.n <- loadExprs(outliersRemove)
+meta.withOutliers <- loadMeta(outliersRemove)
+exprs.n.withOutliers <- loadExprs(outliersRemove)
 # arrayQualityMetrics(new("ExpressionSet", exprs=exprs.n), outdir="arrayQC_WithOutliers")
 ```
 
 ```{r PCAwithOutliers}
-prinComponents(log2(exprs.n))
+prinComponents(log2(exprs.n.withOutliers), meta.withOutliers)
 ```
 
 Clearly, the cohorts are very different. The two patients, p1033216.2 and p1033680.6...5., appear as outliers. They are also picked up by the _arrayQualityMetrics_ set of tests. 
@@ -277,98 +182,85 @@ exprs.n <- loadExprs(outliersRemove)
 ```
 
 ```{r PCAwithoutOutliers}
-prinComponents(log2(exprs.n))
+prinComponents(log2(exprs.n), meta)
 ```
 
 The data looks more homogeneous now, with the cohort effect still dominating.
 
-To further investigate how the outliers affect differential gene expression, we will perform differential expression _limma_ analysis on the expression data with and without outlier, as well as check for the enriched pathways. 
+To further investigate how the outliers affect differential gene expression, we will perform differential expression _limma_ analysis on the expression data with and without outlier. 
+
+### Differential expression with outliers
 
 ```{r limmaWithOutliers}
-<<dataWithOutliers>>
-res <- limmaOnData(exprs.n, "MicroarrayClass")
-nrow(res)
-res.pathway <- reactomeEnrichment(res)
-res.pathway[[2]]
+res <- limmaOnData(exprs.n.withOutliers, meta.withOutliers, "MicroarrayClass")
+# res.pathway <- enrichPathway(gene = grch37$entrez[ grch37$symbol %in% annot.f[rownames(res), "GeneName"] %>% as.vector ],
+#                              organism = "human", pAdjustMethod = "BH", pvalueCutoff = 0.1, qvalueCutoff = 0.2, readable = T)
+# if (nrow(summary(res.pathway)) > 0) {
+#   summary(res.pathway) %>% kable
+# }
 ```
 
-Not many probes are differentially expressed out of `r nrow(exprs.n)` total. No pathway enrichment either.
+Only `r nrow(res)` probes are differentially expressed out of `r nrow(exprs.n.withOutliers)` total. 
 
-```{r limmaWitouthOutliers}
-<<dataWithoutOutliers>>
-res <- limmaOnData(exprs.n, "MicroarrayClass")
-nrow(res)
-res.pathway <- reactomeEnrichment(res)
-res.pathway[[2]]
+### Differential expression without outliers
+
+```{r limmaWitouthOutliers, dependson="dataWithoutOutliers"}
+res <- limmaOnData(exprs.n, meta, "MicroarrayClass")
+# res.pathway <- enrichPathway(gene = grch37$entrez[ grch37$symbol %in% annot.f[rownames(res), "GeneName"] %>% as.vector ],
+#                              organism = "human", pAdjustMethod = "BH", pvalueCutoff = 0.1, qvalueCutoff = 0.2, readable = T)
+# if (nrow(summary(res.pathway)) > 0) {
+#   summary(res.pathway) %>% kable
+# }
 ```
 
-Removing the outliers definitely helps to improve sensitivity in detecting differentially expressed genes. But not enough to see any pathway enrichment.
+Removing the outliers improved sensitivity in detecting differentially expressed genes, `r nrow(res)` DEGs.
 
-Using ComBat to account for batch effect
------------------------------------------
+## Using ComBat to account for batch effect
 
-To investigate batch effect in raw data, we will test the differences between the cohorts of patients, without considering their treatment status. The outliers were removed.
+To investigate batch effect in raw data, we will test the differences between the cohorts of patients, without considering their treatment status. 
 
-```{r limmaCohorts}
-res <- limmaOnData(exprs.n, "Cohort")
-nrow(res)
-res.pathway <- reactomeEnrichment(res)
-res.pathway[[2]]
+The outliers were removed.
+
+```{r limmaCohorts, dependson="dataWithoutOutliers"}
+res <- limmaOnData(exprs.n, meta, "Cohort")
 ```
 
-Almost 1/3 of the probes are differentially expressed between cohorts. They show no pathway enrichment.
+Almost 1/3 of the probes are differentially expressed between cohorts, `r nrow(res)` DEGs out of `r nrow(exprs.n)` total.
 
 We use ComBat to manually adjust for the cohort effect and keep the treatment effect. If we look at the PCA plot after the adjustment, the data look more homogeneous, and the cohorts are now mixed together.
 
-```{r combat}
-combat_edata <- ComBat(dat=exprs.n, batch=meta$Cohort, mod=model.matrix(~as.factor(MicroarrayClass), data=meta), numCovs=NULL, par.prior=TRUE, prior.plots=F)
-prinComponents(combat_edata)
+```{r combat, dependson="dataWithoutOutliers"}
+combat_edata <- ComBat(dat=exprs.n, batch=meta$Cohort, mod=model.matrix(~as.factor(MicroarrayClass), data=meta), par.prior=TRUE, prior.plots=F)
+prinComponents(combat_edata, meta)
 ```
 
-And no differentially expressed genes can be detected after removing the batch effect.
-
-```{r limmaOnCohortCombat}
-res<-limmaOnData(combat_edata, "Cohort")
-nrow(res)
+```{r limmaOnCohortCombat, dependson="combat"}
+res <- limmaOnData(combat_edata, meta, "Cohort")
 ```
 
-Enrichment analysis
-===================
-Reactome canonical pathway enrichment analysis
-----------------------------------------------
+And no differentially expressed genes between the cohorts can be detected after removing the batch effect, `r nrow(res)` DEGs.
 
-So far we used the complete dataset with 62976 probes. However, probes constantly expressed across the conditions are less interesting to us. To increase power of detecting differentially expressed genes, we filter such constantly expressed genes.
+# Differential expression analysis
 
-```{r dataFilter}
+So far we used the complete dataset with 62976 probes. However, probes constantly expressed across the conditions are less interesting to us. To increase power of detecting differentially expressed genes, we remove such constantly expressed genes.
+
+```{r dataFilter, dependson="combat"}
 # Filtering low variability probes
 combat_edata <- exprs(varFilter(new("ExpressionSet", exprs=combat_edata)))
-nrow(combat_edata)
 ```
 
-Almost half of the probes were removed. The number of DEGs expectedly increased (with less probes we have more power to detect DEGs) from 754 to 784.
+Almost half of the probes were removed, keeping `r nrow(combat_edata)` probes. 
 
-After removing batch effect, we not only get more differentially expressed genes, but also enriched pathways. The total number, and the top 30 most tignificant pathways are shown.
-
-```{r limmaOnTreatmentCombat}
-res <- limmaOnData(combat_edata, "MicroarrayClass", "limma_MicroarrayClass_WithoutOutliers_WithoutBatch.txt")
-nrow(res)
-res.pathway <- reactomeEnrichment(res, "Cohort_Reactome.txt")
-res.pathway[[2]]
-grid.table(res.pathway[[1]][1:30, ], gp=gpar(fontsize=7))
+```{r limmaOnTreatmentCombat, dependson="combat"}
+res <- limmaOnData(combat_edata, meta, "MicroarrayClass", "limma_MicroarrayClass_WithoutOutliers_WithoutBatch.txt")
 ```
 
-And, enriched pathways from KEGG database
-
-```{r limmaKEGG}
-res.pathway <- Enrichment(res, "KEGG","Cohort_KEGG.txt")
-res.pathway[[2]]
-grid.table(res.pathway[[1]][1:10, ], gp=gpar(fontsize=7))
-```
+After removing batch effect, we get more differentially expressed genes, `r nrow(res)` DEGs.
 
 Let's have a look at top 50 differentially expressed genes. Multiple probes for the same gene are collapsed to one by maximum expression level.
 
-```{r limmaVisual, warning=FALSE, fig.height=9}
-degs <- collapseRows(combat_edata[rownames(res), ], annot.f[rownames(res), "GeneName"], rownames(res))
+```{r limmaVisual, warning=FALSE, fig.height=9, dependson="combat"}
+degs <- WGCNA::collapseRows(combat_edata[rownames(res), ], annot.f[rownames(res), "GeneName"], rownames(res))
 # Sort the collapsed data by the largest absolute fold change
 maxRatio <- rowMeans(degs$datETcollapsed[, meta$MicroarrayClass == "PSS"])-
            rowMeans(degs$datETcollapsed[, meta$MicroarrayClass == "AC"])
@@ -382,195 +274,147 @@ if (HIDE) labRow="" else labRow=rownames(degs.sorted)
 heatmap.2(degs.sorted[1:50, ], Colv=F, Rowv=F, scale="row", trace="none", col=color, key=T, density.info="none", cexCol=1, cexRow=0.8, labCol=labCol, labRow=labRow[1:50])#, cellnote=formatC(1/10^abs(mtx), format="e", digits=2), notecol='darkgreen')
 ```
 
-We aggregate probe names summarizing expression of the same gene by maximum fold change (because Ingenuity does it wrong).
-
 ```{r aggregateDegs}
 # Merge limma results and annotations
 tmp <- merge(res, annot.f, by="row.names")
 # Get unique "gene name - max logFC" pairs"
 degs <- aggregate(tmp[, "logFC"], by=list(tmp$GeneName), max)
 degs.tmp <- merge(degs, tmp, by.x="x", by.y="logFC")
-write.table(degs.tmp, "results/limma_MicroarrayClass_WithoutOutliers_WithoutBatch_IPA.txt", sep="\t", quote=F, col.names=NA)
+# Save the results
+fileName <- "results/Cohort_DEGs_Enrichment.xlsx"
+unlink(fileName)
+write.xlsx(degs.tmp, fileName, sheetName = "DEGs", row.names = F, append = T)
 ```
 
+We aggregate probe names summarizing expression of the same gene by maximum fold change. The list of all differentially expressed genes, and the full statistical output, are in the "`r fileName`" file.
 
-Gene ontology enrichment analysis
--------------------------------------
+The results of functional enrichment analysis of these differentially expressed genes are in the same "`r fileName`" file. 
 
-First, look at the total number and the top 20 significant ontologies in the "Biological Process" space (Normally, most informative functions).
+Legend: "GO" - gene ontology, with focus on "MF"/"BP"/"CC" - molecular functions/biological processes/cellular components functions; "KEGG" - canonical pathways.
 
-```{r GOBPEnrichment}
-res.go <- Enrichment(res, "GO", "Cohort_GO_BP.txt", "BP")
-res.go[[2]]
-grid.table(res.go[[1]][1:20, ], gp=gpar(fontsize=6))
+Note: For any KEGG pathway, we can visualize it as a figure, and overlay fold changes of differentially expressed genes
+
+```{r dependson="limmaOnTreatmentCombat"}
+all.enrichment.analyses( annot.f[ rownames(res), "GeneName"] %>% as.vector %>% unique, fileName)
+# # Reactome analysis
+# gene = grch37$entrez[ grch37$symbol %in% annot.f[rownames(res), "GeneName"] %>% as.vector]
+# gene = gene[ !is.na(gene)]
+# res.pathway <- enrichPathway(gene, organism = "human", pAdjustMethod = "BH", pvalueCutoff = 0.1, qvalueCutoff = 0.2, readable = T)
+# if (nrow(summary(res.pathway)) > 0) {
+#   summary(res.pathway) %>% kable
+# }
 ```
 
-Second, look at the total number and the top 20 significant ontologies in the "Molecular Function" space (Second most informative).
+# Genes best correlating with clinical parameters
 
-```{r GOMFEnrichment}
-res.go <- Enrichment(res, "GO", , "MF")
-res.go[[2]]
-grid.table(res.go[[1]][1:20, ], gp=gpar(fontsize=6))
-```
-
-Finally, look at the total number and the top 20 significant ontologies in the "Cellular Component" space (Least informative).
-
-```{r GOCCEnrichment}
-res.go <- Enrichment(res, "GO", , "CC")
-res.go[[2]]
-grid.table(res.go[[1]][1:20, ], gp=gpar(fontsize=6))
-```
-
-
-Genes best correlating with clinical parameters
-=====================================
 Interesting clinical parameters are: WUSFvol, SSFvolL, SSFvolR, LGleft, LGright, FS, LaBioRadvalue, RoBioRadvalue, RFvalue. For each clinical parameter, we answer 3 questions:
 
 1) What are the top 20 genes best correlated with a clinical parameter?
-
 2) Are those genes enriched in canonical pathways? Which? In how many?
-
 3) Are those genes enriched in "biological process" gene ontologies? Which? In how many?
 
 We can look at correlations in multiple ways:
 
 1) Clinical parameter with all genes, e.g., clinCorrel(meta$WUSFvol, , combat_edata)
-
 2) Clinical parameter with DEGs only, e.g., clinCorrel(meta$WUSFvol, , combat_edata[rownames(res), ])
-
 3) Current. Clinical parameter with DEGs only in PSS group, e.g., 
 
-Note, bug fixed: Now, GO and KEGG enrichment analyses are done using genes correlating with clinical parameters with p-value < 0.05.
+Note, GO and KEGG enrichment analyses are done using genes correlating with clinical parameters with p-value < 0.05.
 
 WUSFvol
------------
+
 ```{r WUSFvol_c1, fig.width=12}
-correlGenes <- clinCorrel(meta$WUSFvol[meta$MicroarrayClass == "PSS"], "clinCorrel.WUSFvol.genes", combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
+fileName <- "results/clinCorrel_WUSFvol.xlsx"
+unlink(fileName)
+correlGenes <- clinCorrel(meta$WUSFvol[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
+write.xlsx2(correlGenes, fileName, sheetName = "correlGenes", row.names = F, append = T)
+all.enrichment.analyses(correlGenes$GeneName %>% unique, fileName)
 ```
 
-```{r WUSFvol_c2, fig.height=3, dependson="WUSFvol_c1"}
-clinCorrelPathways(correlGenes[correlGenes[, "Pval"] < 0.05, ])
-```
-
-```{r WUSFvol_c3, dependson="WUSFvol_c1"}
-clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
-```
 SSFvolL
------------
+
 ```{r SSFvolL_c1, fig.width=12}
-correlGenes <- clinCorrel(meta$SSFvolL[meta$MicroarrayClass == "PSS"], "clinCorrel.SSFvolL.genes", combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
-```
-
-```{r SSFvolL_c2, fig.height=3, dependson="SSFvolL_c1"}
-clinCorrelPathways(correlGenes[correlGenes[, "Pval"] < 0.05, ])
-```
-
-```{r SSFvolL_c3, dependson="SSFvolL_c1"}
-clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
+fileName <- "results/clinCorrel_SSFvolL.xlsx"
+unlink(fileName)
+correlGenes <- clinCorrel(meta$SSFvolL[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
+write.xlsx2(correlGenes, fileName, sheetName = "correlGenes", row.names = F, append = T)
+all.enrichment.analyses(correlGenes$GeneName %>% unique, fileName)
 ```
 
 SSFvolR
------------
+
 ```{r SSFvolR_c1, fig.width=12}
-correlGenes <- clinCorrel(meta$SSFvolR[meta$MicroarrayClass == "PSS"], "clinCorrel.SSFvolR.genes", combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
-```
-
-```{r SSFvolR_c2, fig.height=3, dependson="SSFvolR_c1"}
-clinCorrelPathways(correlGenes[correlGenes[, "Pval"] < 0.05, ])
-```
-
-```{r SSFvolR_c3, dependson="SSFvolR_c1"}
-clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
+fileName <- "results/clinCorrel_SSFvolR.xlsx"
+unlink(fileName)
+correlGenes <- clinCorrel(meta$SSFvolR[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
+write.xlsx2(correlGenes, fileName, sheetName = "correlGenes", row.names = F, append = T)
+all.enrichment.analyses(correlGenes$GeneName %>% unique, fileName)
 ```
 
 LGleft
------------
+
 ```{r LGleft_c1, fig.width=12}
+fileName <- "results/clinCorrel_LGleft.xlsx"
+unlink(fileName)
 correlGenes <- clinCorrel(meta$LGleft[meta$MicroarrayClass == "PSS"], "clinCorrel.LGleft.genes", combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
-```
-
-```{r LGleft_c2, fig.height=3, dependson="LGleft_c1"}
-clinCorrelPathways(correlGenes[correlGenes[, "Pval"] < 0.05, ])
-```
-
-```{r LGleft_c3, dependson="LGleft_c1"}
-clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
+write.xlsx2(correlGenes, fileName, sheetName = "correlGenes", row.names = F, append = T)
+all.enrichment.analyses(correlGenes$GeneName %>% unique, fileName)
 ```
 
 LGright
------------
+
 ```{r LGright_c1, fig.width=12}
-correlGenes <- clinCorrel(meta$LGright[meta$MicroarrayClass == "PSS"], "clinCorrel.LGright.genes", combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
-```
-
-```{r LGright_c2, fig.height=3, dependson="LGright_c1"}
-clinCorrelPathways(correlGenes[correlGenes[, "Pval"] < 0.05, ])
-```
-
-```{r LGright_c3, dependson="LGright_c1"}
-clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
+fileName <- "results/clinCorrel_LGright.xlsx"
+unlink(fileName)
+correlGenes <- clinCorrel(meta$LGright[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
+write.xlsx2(correlGenes, fileName, sheetName = "correlGenes", row.names = F, append = T)
+all.enrichment.analyses(correlGenes$GeneName %>% unique, fileName)
 ```
 
 FS
------------
+
 ```{r FS_c1, fig.width=12}
-correlGenes <- clinCorrel(meta$FS[meta$MicroarrayClass == "PSS"], "clinCorrel.FS.genes", combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
-```
-
-```{r FS_c2, dependson="FS_c1"}
-clinCorrelPathways(correlGenes[correlGenes[, "Pval"] < 0.05, ], "clinCorrel.FS.Pathways")
-```
-
-```{r FS_c3, dependson="FS_c1"}
-clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ], "clinCorrel.FS.GO")
+fileName <- "results/clinCorrel_FS.xlsx"
+unlink(fileName)
+correlGenes <- clinCorrel(meta$FS[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
+write.xlsx2(correlGenes, fileName, sheetName = "correlGenes", row.names = F, append = T)
+all.enrichment.analyses(correlGenes$GeneName %>% unique, fileName)
 ```
 
 LaBioRadvalue
------------
+
 ```{r LaBioRadvalue_c1, fig.width=12}
-correlGenes <- clinCorrel(meta$LaBioRadvalue[meta$MicroarrayClass == "PSS"], "clinCorrel.LaBioRadvalue.genes", combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
-```
-
-```{r LaBioRadvalue_c2, dependson="LaBioRadvalue_c1", fig.height=3}
-clinCorrelPathways(correlGenes[correlGenes[, "Pval"] < 0.05, ])
-```
-
-```{r LaBioRadvalue_c3, dependson="LaBioRadvalue_c1"}
-clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
+fileName <- "results/clinCorrel_LaBioRadvalue.xlsx"
+unlink(fileName)
+correlGenes <- clinCorrel(meta$LaBioRadvalue[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
+write.xlsx2(correlGenes, fileName, sheetName = "correlGenes", row.names = F, append = T)
+all.enrichment.analyses(correlGenes$GeneName %>% unique, fileName)
 ```
 
 RoBioRadvalue
------------
+
 ```{r RoBioRadvalue_c1, fig.width=12}
-correlGenes <- clinCorrel(meta$RoBioRadvalue[meta$MicroarrayClass == "PSS"], "clinCorrel.RoBioRadvalue.genes", combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
-```
-
-```{r RoBioRadvalue_c2, dependson="RoBioRadvalue_c1"}
-clinCorrelPathways(correlGenes[correlGenes[, "Pval"] < 0.05, ])
-```
-
-```{r RoBioRadvalue_c3, dependson="RoBioRadvalue_c1"}
-clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
+fileName <- "results/clinCorrel_RoBioRadvalue.xlsx"
+unlink(fileName)
+correlGenes <- clinCorrel(meta$RoBioRadvalue[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
+write.xlsx2(correlGenes, fileName, sheetName = "correlGenes", row.names = F, append = T)
+all.enrichment.analyses(correlGenes$GeneName %>% unique, fileName)
 ```
 
 RFvalue
------------
+
 ```{r RFvalue_c1, fig.width=12}
-correlGenes <- clinCorrel(meta$RFvalue[meta$MicroarrayClass == "PSS"], "clinCorrel.RFvalue.genes", combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
+fileName <- "results/clinCorrel_RFvalue.xlsx"
+unlink(fileName)
+correlGenes <- clinCorrel(meta$RFvalue[meta$MicroarrayClass == "PSS"], , combat_edata[rownames(res), names(meta$FS[meta$MicroarrayClass == "PSS"])])
+write.xlsx2(correlGenes, fileName, sheetName = "correlGenes", row.names = F, append = T)
+all.enrichment.analyses(correlGenes$GeneName %>% unique, fileName)
 ```
 
-```{r RFvalue_c2, dependson="RFvalue_c1"}
-clinCorrelPathways(correlGenes[correlGenes[, "Pval"] < 0.05, ])
-```
+# Genes best correlating with the flow counts
 
-```{r RFvalue_c3, dependson="RFvalue_c1"}
-clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
-```
-
-Genes best correlating with flow counts
-=====================================
 ```{r loadFlowData, echo=FALSE}
-flow <- read.table("data//flow.txt", sep="\t", header=T, row.names=1)
+flow <- read.table("data//flow.txt", sep="\t", header=T, row.names=1, stringsAsFactors = F)
 rownames(flow) <- make.names(rownames(flow)) # Make row names compatible with the combat_edata
 flow.mtx <- as.matrix(flow[1:(nrow(flow) - 1), 4:ncol(flow)]) # Remove last patient
 flow.patients <- intersect(rownames(flow.mtx), colnames(combat_edata))
@@ -584,17 +428,15 @@ Things to watch for: Some different measurements show perfect correlation of "1"
 selected <- flow.mtx[,1:11] # Flow counts as percentage
 selected <- flow.mtx[,13:20] # Flow counts as numbers
 class(selected) <- "numeric"
-library(Hmisc)
 flow.cor <- rcorr(selected[complete.cases(selected), ]) 
-dev.off()
-pdf(paste("results", "flowCorrel.pdf", sep="/"))
+# pdf(paste("results", "flowCorrel.pdf", sep="/"))
 par(oma=c(5,0,0,5), mar=c(6, 4.1, 4.1, 6)) # Adjust margins
 color<-colorRampPalette(c("blue","yellow")) # Define color gradient
 # Adjust clustering parameters.
 # Distance: "euclidean", "maximum","manhattan" or "minkowski". Do not use "canberra" or "binary"
 # Clustering: "ward", "single", "complete", "average", "mcquitty", "median" or "centroid"
 dist.method<-"euclidean"  
-hclust.method<-"ward"
+hclust.method<-"ward.D"
 # Make Pearson's coefficients and p-values merged in one cell
 cnote <- matrix(0, nrow=nrow(flow.cor$r), ncol=ncol(flow.cor$r))
 for (i in 1:nrow(flow.cor$r)) {
@@ -603,44 +445,54 @@ for (i in 1:nrow(flow.cor$r)) {
   }
 }
 h<-heatmap.2(as.matrix(flow.cor$r), trace="none", density.info="none", col=color,distfun=function(x){dist(x, method=dist.method)}, hclustfun=function(x){hclust(x, method=hclust.method)}, cexRow=0.7, cexCol=0.7, cellnote=cnote , notecex=0.6, notecol='red')
-dev.off()
+# dev.off()
 ```
 
 %CD4+RA-(of CD3+)
-------------------
+
 ```{r pctCD4plusRAminus.of.CD3plus._c1, fig.width=12}
-correlGenes <- clinCorrel(flow.mtx[, "pctCD4plusRAminus.of.CD3plus."], "flowCorrel.pctCD4plusRAminus.of.CD3plus..genes", combat_edata[rownames(res), flow.patients])
-```
-
-```{r X..CD4.RA..of.CD3..._c2, dependson="RFvalue_c1"}
-clinCorrelPathways(correlGenes[correlGenes[, "Pval"] < 0.05, ])
-```
-
-```{r X..CD4.RA..of.CD3..._c3, dependson="RFvalue_c1"}
-clinCorrelGOs(correlGenes[correlGenes[, "Pval"] < 0.05, ])
+fileName <- "results/flowCorrel_pctCD4plusRAminus.of.CD3plus..genes.xlsx"
+unlink(fileName)
+correlGenes <- clinCorrel(flow.mtx[, "pctCD4plusRAminus.of.CD3plus."], , combat_edata[rownames(res), flow.patients])
+write.xlsx2(correlGenes, fileName, sheetName = "correlGenes", row.names = F, append = T)
+all.enrichment.analyses(correlGenes$GeneName %>% unique, fileName)
 ```
 
 %CD8+RA-(of CD3+)    
------------------
+
 ```{r pctCD8plusRAminus.of.CD3plus._c1, fig.width=12}
-correlGenes <- clinCorrel(flow.mtx[, "pctCD8plusRAminus.of.CD3plus."], "flowCorrel.pctCD8plusRAminus.of.CD3plus..genes", combat_edata[rownames(res), flow.patients])
+fileName <- "results/flowCorrel_pctCD8plusRAminus.of.CD3plus..genes.xlsx"
+unlink(fileName)
+correlGenes <- clinCorrel(flow.mtx[, "pctCD8plusRAminus.of.CD3plus."], , combat_edata[rownames(res), flow.patients])
+write.xlsx2(correlGenes, fileName, sheetName = "correlGenes", row.names = F, append = T)
+all.enrichment.analyses(correlGenes$GeneName %>% unique, fileName)
 ```
 
 %CD4-8-(of CD3+)
------------------
+
 ```{r pctCD4minus8minus.of.CD3plus._c1, fig.width=12}
-correlGenes <- clinCorrel(flow.mtx[, "pctCD4minus8minus.of.CD3plus."], "flowCorrel.pctCD4minus8minus.of.CD3plus..genes", combat_edata[rownames(res), flow.patients])
+fileName <- "results/flowCorrel_pctCD4minus8minus.of.CD3plus..genes.xlsx"
+unlink(fileName)
+correlGenes <- clinCorrel(flow.mtx[, "pctCD4minus8minus.of.CD3plus."], , combat_edata[rownames(res), flow.patients])
+write.xlsx2(correlGenes, fileName, sheetName = "correlGenes", row.names = F, append = T)
+all.enrichment.analyses(correlGenes$GeneName %>% unique, fileName)
 ```
 
 ratio.of.pctCD4plusRAminusperpct.CD8plusRAminus  
------------------
+
 ```{r ratio.of.pctCD4plusRAminusperpct.CD8plusRAminus_c1, fig.width=12}
-correlGenes <- clinCorrel(flow.mtx[, "ratio.of.pctCD4plusRAminusperpct.CD8plusRAminus"], "flowCorrel.ratio.of.pctCD4plusRAminusperpct.CD8plusRAminus.genes", combat_edata[rownames(res), flow.patients])
+fileName <- "results/flowCorrel_ratio.of.pctCD4plusRAminusperpct.CD8plusRAminus.genes.xlsx"
+unlink(fileName)
+correlGenes <- clinCorrel(flow.mtx[, "ratio.of.pctCD4plusRAminusperpct.CD8plusRAminus"], , combat_edata[rownames(res), flow.patients])
+write.xlsx2(correlGenes, fileName, sheetName = "correlGenes", row.names = F, append = T)
+all.enrichment.analyses(correlGenes$GeneName %>% unique, fileName)
 ```
 
 pctCD38hi27hi.of.TN.
------------------
+
 ```{r pctCD38hi27hi.of.TN._c1, fig.width=12}
+fileName <- "results/flowCorrel_pctCD38hi27hi.of.TN..genes.xlsx"
+unlink(fileName)
 idx <- !is.na(as.numeric(flow.mtx[, "pctCD38hi27hi.of.TN."]))
-correlGenes <- clinCorrel(flow.mtx[idx, "pctCD38hi27hi.of.TN."], "flowCorrel.pctCD38hi27hi.of.TN..genes", combat_edata[rownames(res), flow.patients[idx]])
+correlGenes <- clinCorrel(flow.mtx[idx, "pctCD38hi27hi.of.TN."], , combat_edata[rownames(res), flow.patients[idx]])
 ```
